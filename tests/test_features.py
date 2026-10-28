@@ -41,11 +41,19 @@ class FeatureTests(unittest.TestCase):
     def test_feature_packages(self):
         packages = b.package_selection('standard', True, 'nikki', 'htop curl')
         self.assertIn('dockerd', packages)
+        self.assertIn('luci-i18n-base-zh-cn', packages)
+        self.assertIn('luci-i18n-dockerman-zh-cn', packages)
+        self.assertIn('luci-i18n-nikki-zh-cn', packages)
         self.assertIn('mihomo-meta', packages)
         self.assertIn('-dnsmasq', packages)
         self.assertNotIn('luci-app-openclash', packages)
         self.assertEqual(packages.count('curl'), 1)
         self.assertEqual(b.package_selection('minimal', False, 'none', ''), [])
+        legacy = b.package_selection('standard', False, 'openclash', '', 'iptables')
+        self.assertIn('iptables-mod-tproxy', legacy)
+        self.assertNotIn('kmod-nft-tproxy', legacy)
+        with self.assertRaises(ValueError):
+            b.package_selection('standard', False, 'nikki', '', 'iptables')
 
     def test_defaults_are_one_shot_and_proxy_stays_disabled(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -125,14 +133,16 @@ class ReleaseTests(unittest.TestCase):
                     proxy='none', github_sha='a' * 40)
         p = directory / 'build-info.json'
         p.write_text(json.dumps(info))
-        digest = hashlib.sha256(p.read_bytes()).hexdigest()
-        (directory / 'SHA256SUMS').write_text(f'{digest}  build-info.json\n')
+        (directory / 'ACCESS.md').write_text('管理 IPv4：192.168.77.1；用户名 root；初始密码未设置', encoding='utf-8')
+        (directory / 'SHA256SUMS').write_text(''.join(
+            f'{hashlib.sha256(p.read_bytes()).hexdigest()}  {p.name}\n'
+            for p in sorted(directory.iterdir())))
 
     def test_corruption_and_extra_assets_are_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
             directory = Path(tmp)
             self.fixture(directory)
-            self.assertEqual(len(release.verified_files(directory)), 2)
+            self.assertEqual(len(release.verified_files(directory)), 3)
             (directory / 'unexpected').write_bytes(b'x')
             with self.assertRaises(ValueError):
                 release.verified_files(directory)
@@ -147,12 +157,14 @@ class ReleaseTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, env):
             directory = Path(tmp)
             self.fixture(directory)
-            responses = [{'id': 7}, {'state': 'uploaded', 'size': (directory / 'build-info.json').stat().st_size},
+            responses = [{'id': 7}, {'state': 'uploaded', 'size': (directory / 'ACCESS.md').stat().st_size},
+                         {'state': 'uploaded', 'size': (directory / 'build-info.json').stat().st_size},
                          {'state': 'uploaded', 'size': (directory / 'SHA256SUMS').stat().st_size},
                          {'html_url': 'https://github.com/test/repo/releases/tag/test'}]
             with patch.object(release, 'request', side_effect=responses) as call:
                 release.publish(directory)
                 self.assertTrue(json.loads(call.call_args_list[0].args[3])['draft'])
+                self.assertIn('192.168.77.1', json.loads(call.call_args_list[0].args[3])['body'])
                 self.assertEqual(call.call_args_list[-1].args[1], 'PATCH')
             with patch.object(release, 'request', side_effect=[{'id': 8}, RuntimeError('upload failed')]) as call:
                 with self.assertRaises(RuntimeError):

@@ -5,11 +5,11 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: '官方 OpenWrt 版本（已核实的发布版本）'
+        description: '从官网实时解析最新三个大版本（实际版本见运行摘要）'
         type: choice
         required: true
-        options: ['25.12.6', '24.10.6']
-        default: '25.12.6'
+        options: ['最新大版本', '上一大版本', '上两个大版本']
+        default: '最新大版本'
       target:
         description: 目标平台
         type: choice
@@ -21,25 +21,25 @@ on:
         options: ['256', '512', '1024', '2048', '4096']
         default: '1024'
       preset:
-        description: 'minimal=官方默认包；standard=默认包加 LuCI HTTPS/curl'
+        description: 'minimal=官方基础包；standard=中文 LuCI HTTPS + curl（推荐）'
         type: choice
         options: [minimal, standard]
         default: standard
       lan_ip:
-        description: '管理 IPv4（留空保留官方默认；填写私网地址，掩码固定 /24）'
+        description: '管理 IPv4（默认 192.168.1.1；私网主机地址，固定 /24；运行前校验）'
         type: string
         default: ''
       docker:
-        description: 预装 Docker 和 Dockerman 管理界面（根分区至少 512 MiB）
+        description: 预装 Docker 和中文 Dockerman 管理界面（至少 512 MiB）
         type: boolean
         default: false
       proxy:
-        description: '代理插件（预装核心，首次启动保持关闭，需自行导入配置）'
+        description: '中文代理管理插件及核心（Nikki 不支持 23；首次启动保持关闭）'
         type: choice
         options: [none, openclash, nikki]
         default: none
       extra_packages:
-        description: '额外官方软件包（空格分隔，只允许添加包）'
+        description: '额外官方包（可留空；包名速查及示例见仓库 docs/PACKAGES.md）'
         type: string
         default: ''
       publish_release:
@@ -79,12 +79,13 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends build-essential libncurses-dev zlib1g-dev gawk git gettext libssl-dev xsltproc rsync unzip file wget curl python3 zstd xz-utils
       - name: Download, verify and build
+        id: builder
         run: python3 -u scripts/build.py 2>&1 | tee build.log
       - name: Upload verified firmware
         id: firmware
         uses: actions/upload-artifact@v4
         with:
-          name: openwrt-${{ inputs.version }}-x86-64-${{ inputs.proxy }}-${{ inputs.rootfs_mb }}MiB-${{ github.run_id }}-${{ github.run_attempt }}
+          name: openwrt-${{ steps.builder.outputs.version }}-x86-64-${{ inputs.proxy }}-${{ inputs.rootfs_mb }}MiB-${{ github.run_id }}-${{ github.run_attempt }}
           path: dist/
           if-no-files-found: error
           retention-days: 14

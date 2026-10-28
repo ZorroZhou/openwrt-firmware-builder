@@ -47,8 +47,10 @@ def publish(directory):
         raise ValueError('Artifact commit differs from publishing commit')
     run_id, attempt = os.environ['GITHUB_RUN_ID'], os.environ['GITHUB_RUN_ATTEMPT']
     tag = f"firmware-{info['version']}-{run_id}-{attempt}"
+    notes = (directory / 'ACCESS.md').read_text(encoding='utf-8')
     body = (f"OpenWrt {info['version']} / x86-64 / {info['rootfs_mib']} MiB\n\n"
             f"Preset: {info['preset']}; Docker: {info['docker']}; Proxy: {info['proxy']}\n\n"
+            + notes + '\n\n'
             'Verify downloaded files using SHA256SUMS. Build checks do not replace boot testing.\n\n'
             f'https://github.com/{repo}/actions/runs/{run_id}')
     api = f'https://api.github.com/repos/{repo}/releases'

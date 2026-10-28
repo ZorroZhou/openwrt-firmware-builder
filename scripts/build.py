@@ -18,15 +18,75 @@ import urllib.request
 from urllib.parse import urlparse
 import zlib
 
-PRESETS = {'minimal': '', 'standard': 'luci-ssl curl ca-bundle'}
+PRESETS = {'minimal': '', 'standard': 'luci-ssl luci-i18n-base-zh-cn curl ca-bundle'}
 SIZES = {256, 512, 1024, 2048, 4096}
+VERSION_SOURCE = 'https://downloads.openwrt.org/.versions.json'
+CHANNELS = {'最新大版本': 0, '上一大版本': 1, '上两个大版本': 2,
+            'latest': 0, 'previous': 1, 'third': 2}
 
 
 def validate(version, target, size, preset):
-    if not re.fullmatch(r'(24\.10|25\.12)\.(0|[1-9][0-9]*)', version):
-        raise ValueError('仅支持完整稳定版本号 24.10.N / 25.12.N；不接受 snapshot/RC/URL')
+    if version not in CHANNELS and not re.fullmatch(r'[1-9][0-9]\.[0-9]{2}\.(0|[1-9][0-9]*)', version):
+        raise ValueError('请选择最新/上一/上两个大版本；不接受 snapshot、RC 或下载 URL')
     if target != 'x86-64' or size not in SIZES or preset not in PRESETS:
         raise ValueError('不支持的 target、根分区大小或 preset')
+
+
+def official_catalog():
+    with urllib.request.urlopen(VERSION_SOURCE, timeout=60) as response:
+        if response.url != VERSION_SOURCE:
+            raise ValueError('官方版本数据重定向到非预期地址')
+        return json.load(response)
+
+
+def latest_three(catalog):
+    versions = catalog.get('versions_list')
+    if not isinstance(versions, list) or not all(isinstance(v, str) for v in versions):
+        raise ValueError('官方版本数据格式不符合预期')
+    releases = [v for v in versions if re.fullmatch(r'[1-9][0-9]\.[0-9]{2}\.[0-9]+', v)]
+    ordered = sorted(set(releases), key=lambda v: tuple(map(int, v.split('.'))), reverse=True)
+    chosen, majors = [], set()
+    for version in ordered:
+        major = version.split('.')[0]
+        if major not in majors:
+            chosen.append(version)
+            majors.add(major)
+        if len(chosen) == 3:
+            return chosen
+    raise ValueError('官网没有提供三个完整稳定大版本；停止构建，不猜测版本目录')
+
+
+def resolve_release(selection, catalog):
+    latest = latest_three(catalog)
+    if selection in CHANNELS:
+        return latest[CHANNELS[selection]]
+    if (selection not in catalog['versions_list'] or
+            selection.split('.')[0] not in {v.split('.')[0] for v in latest} or
+            not re.fullmatch(r'[1-9][0-9]\.[0-9]{2}\.[0-9]+', selection)):
+        raise ValueError('版本不在官网最新三个稳定大版本范围内')
+    return selection
+
+
+def plugin_support(version, proxy):
+    if proxy == 'nikki':
+        lock = json.loads((Path(__file__).resolve().parents[1] / 'configs/plugins.lock.json').read_text())
+        branch = '.'.join(version.split('.')[:2])
+        if branch not in lock['nikki']:
+            raise ValueError(f'Nikki 没有锁定兼容 {branch} 的上游包；请选择 none 或 OpenClash，不混用其他版本包')
+
+
+def detect_runtime(config):
+    flags = set(config.splitlines())
+    if 'CONFIG_USE_APK=y' in flags:
+        manager = 'apk'
+    elif 'CONFIG_PACKAGE_opkg=y' in flags:
+        manager = 'opkg'
+    else:
+        raise ValueError('无法识别 ImageBuilder 包管理器')
+    fw4, fw3 = 'CONFIG_PACKAGE_firewall4=y' in flags, 'CONFIG_PACKAGE_firewall=y' in flags
+    if fw4 == fw3:
+        raise ValueError('防火墙配置缺失或同时启用 fw3/fw4，停止构建')
+    return manager, 'nftables' if fw4 else 'iptables'
 
 
 def download(url, dest, github=False):
@@ -119,6 +179,8 @@ def extract(archive, workspace):
     for tool in host_links:
         if tool in ('ldconfig', 'xxd'):
             target = roots[0] / 'scripts' / ('noop.sh' if tool == 'ldconfig' else 'xxdi.pl')
+            if tool == 'ldconfig' and not target.is_file():
+                target = shutil.which('true')
         else:
             target = shutil.which({'awk': 'gawk', 'python': 'python3'}.get(tool, tool))
         if not target:
@@ -179,26 +241,38 @@ def validate_features(lan_ip='', docker=False, proxy='none', extra_packages=''):
     if type(docker) is not bool or proxy not in ('none', 'openclash', 'nikki'):
         raise ValueError('Docker 或代理选项不合法')
     if lan_ip:
-        ip = ipaddress.IPv4Address(lan_ip)
+        try:
+            ip = ipaddress.IPv4Address(lan_ip)
+        except ipaddress.AddressValueError as exc:
+            raise ValueError('管理 IPv4 格式错误；示例 192.168.31.100，不要填写端口、网址或 /24') from exc
         private = any(ip in ipaddress.IPv4Network(net) for net in
                       ('10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16'))
         if not private or int(str(ip).split('.')[-1]) in (0, 255):
             raise ValueError('管理 IP 必须是私网 /24 网段的有效主机地址')
+        if docker and ip in ipaddress.IPv4Network('172.17.0.0/16'):
+            raise ValueError('管理 IP 与 Docker 默认 172.17.0.0/16 网段冲突，请换用其他私网网段')
     packages = extra_packages.split()
     if len(extra_packages) > 1024 or len(packages) > 64 or any(
             not re.fullmatch(r'[a-z0-9][a-z0-9+_.-]*', p) for p in packages):
         raise ValueError('自定义包只接受软件包名称（最多 64 个），不接受命令或移除包语法')
 
 
-def package_selection(preset, docker, proxy, extra_packages):
+def package_selection(preset, docker, proxy, extra_packages, firewall='nftables'):
     packages = PRESETS[preset].split()
     if docker:
-        packages += ['docker', 'dockerd', 'luci-app-dockerman']
+        packages += ['docker', 'dockerd', 'luci-app-dockerman', 'luci-i18n-dockerman-zh-cn']
+    if docker or proxy != 'none' or any(p.startswith('luci') for p in extra_packages.split()):
+        packages += ['luci-ssl', 'luci-i18n-base-zh-cn']
     if proxy != 'none':
-        packages += ['luci-ssl', '-dnsmasq', 'dnsmasq-full', 'kmod-tun', 'kmod-nft-tproxy',
-                     'kmod-inet-diag', 'ip-full']
+        packages += ['-dnsmasq', 'dnsmasq-full', 'kmod-tun', 'kmod-inet-diag', 'ip-full']
+        if firewall == 'nftables':
+            packages += ['kmod-nft-tproxy']
+        elif firewall == 'iptables' and proxy == 'openclash':
+            packages += ['iptables-mod-tproxy', 'iptables-mod-extra', 'kmod-ipt-nat', 'ipset']
+        else:
+            raise ValueError('所选代理不支持当前防火墙后端')
         packages += (['luci-app-openclash', 'luci-compat'] if proxy == 'openclash'
-                     else ['mihomo-meta', 'nikki', 'luci-app-nikki'])
+                     else ['mihomo-meta', 'nikki', 'luci-app-nikki', 'luci-i18n-nikki-zh-cn'])
     return list(dict.fromkeys(packages + extra_packages.split()))
 
 
@@ -259,7 +333,7 @@ def prepare_plugin(builder, workspace, overlay, version, proxy, manager):
         extracted = workspace / 'nikki-packages'
         with tarfile.open(archive) as bundle:
             bundle.extractall(extracted, filter='data')
-        for name in ('mihomo-meta', 'nikki', 'luci-app-nikki'):
+        for name in ('mihomo-meta', 'nikki', 'luci-app-nikki', 'luci-i18n-nikki-zh-cn'):
             separator = '-' if manager == 'apk' else '_'
             candidates = list(extracted.glob(name + separator + '*' + suffix))
             if len(candidates) != 1:
@@ -284,6 +358,24 @@ def verify_installed(manifests, required):
     missing = set(required) - names
     if missing:
         raise ValueError('manifest 缺少请求的软件包：' + ', '.join(sorted(missing)))
+    return names
+
+
+def access_notes(info):
+    ip = info['lan_ip']
+    web = f'https://{ip}/' if info['luci'] else '未预装 LuCI 网页管理界面（minimal 基础系统）'
+    return (f"# OpenWrt {info['version']} 使用说明\n\n"
+            f"- 目标：x86-64 / generic\n- 管理 IPv4：**{ip}**\n"
+            f"- LAN 掩码：255.255.255.0（/24）\n- 网页管理：{web}\n"
+            f"- SSH：`ssh root@{ip}`\n- 用户名：**root**\n"
+            '- 初始密码：**未设置（空密码）**；全新刷写后首次登录请自行设置密码。\n'
+            '- 本项目不预置共享密码，不在公开 Release 中保存个人密码。\n'
+            '- 此说明适用于全新刷写/恢复出厂；保留旧配置升级时，地址和密码以旧配置为准。\n'
+            f"- 软件包管理器：{info['package_manager']}\n- 防火墙：{info['firewall']}\n"
+            f"- 简体中文：{'LuCI 及所选管理插件中文资源已包含' if info['luci'] else '无网页界面，不追加 LuCI 语言包'}\n"
+            f"- Docker：{'已预装' if info['docker'] else '未选择'}\n"
+            f"- 代理：{info['proxy']}（如已选择，首次启动保持关闭，导入自己的配置后再启用）\n\n"
+            '先在隔离虚拟机验收。不要与现有路由器在同一网段同时提供 DHCP。\n')
 
 
 def build(version, target, size, preset, lan_ip='', docker=False, proxy='none', extra_packages=''):
@@ -294,6 +386,12 @@ def build(version, target, size, preset, lan_ip='', docker=False, proxy='none', 
     workspace, dist = Path('work'), Path('dist')
     if workspace.exists() or dist.exists():
         raise ValueError('work/ 或 dist/ 已存在；请使用干净工作目录，防止混入旧产物')
+    requested = version
+    catalog = official_catalog()
+    version = resolve_release(requested, catalog)
+    plugin_support(version, proxy)
+    print(f'官方版本解析：{requested} -> {version}；最新三代：{latest_three(catalog)}', flush=True)
+    lan_ip = lan_ip or '192.168.1.1'
     workspace.mkdir()
     workspace = workspace.resolve()
     overlay = workspace / 'files'
@@ -307,16 +405,14 @@ def build(version, target, size, preset, lan_ip='', docker=False, proxy='none', 
     verify(archive, digest)
     builder = extract(archive, workspace)
     config = (builder / '.config').read_text()
-    uses_apk = 'CONFIG_USE_APK=y' in config.splitlines()
-    expected_apk = version.startswith('25.12.')
-    if uses_apk != expected_apk:
-        raise ValueError('ImageBuilder 包管理器与版本预期不符，需人工审查')
-    manager = 'apk' if uses_apk else 'opkg'
+    manager, firewall = detect_runtime(config)
+    if proxy == 'nikki' and firewall != 'nftables':
+        raise ValueError('Nikki 仅支持 fw4/nftables')
     # ImageBuilder clears MAKEFLAGS in recursive invocations: persist the setting.
     (builder / '.config').write_text(configure_rootfs(config, size))
     print(f'官方 ImageBuilder：{name}；包管理器：{manager}', flush=True)
     plugins = prepare_plugin(builder, workspace, overlay, version, proxy, manager)
-    packages = package_selection(preset, docker, proxy, extra_packages)
+    packages = package_selection(preset, docker, proxy, extra_packages, firewall)
     # Keep official repositories, signing keys and default device packages intact.
     run(['make', 'info'], builder)
     args = ['make', 'image', 'PROFILE=generic', 'PACKAGES=' + ' '.join(packages),
@@ -326,21 +422,37 @@ def build(version, target, size, preset, lan_ip='', docker=False, proxy='none', 
     run(args, builder)
     output = builder / 'bin/targets/x86/64'
     images, manifests = validate_outputs(output, version, size)
-    verify_installed(manifests, [p for p in packages if not p.startswith('-')])
+    installed = verify_installed(manifests, [p for p in packages if not p.startswith('-')])
+    verify_installed(manifests, ['firewall4' if firewall == 'nftables' else 'firewall'])
+    if proxy == 'openclash':
+        translations = list((builder / 'staging_dir').glob('target-*/root-*/usr/lib/lua/luci/i18n/openclash.*.lmo'))
+        if not any('zh-cn' in p.name or 'zh_Hans' in p.name or 'zh-cn' in p.name.replace('_', '-') for p in translations):
+            raise ValueError('OpenClash 缺少内置简体中文资源')
     # Publish only after all checks pass.
     dist.mkdir()
     for path in images + manifests:
         shutil.copy2(path, dist / path.name)
-    metadata = dict(builder_version='2.0.0', version=version, target=target, profile='generic', rootfs_mib=size,
-                    preset=preset, packages=packages, lan_ip=lan_ip or 'official-default',
-                    docker=docker, proxy=proxy, plugins=plugins, package_manager=manager,
+    metadata = dict(builder_version='2.1.0', version=version, version_requested=requested,
+                    version_source=VERSION_SOURCE, target=target, profile='generic', rootfs_mib=size,
+                    preset=preset, packages=packages, lan_ip=lan_ip, username='root', password_state='unset',
+                    luci=('luci-ssl' in installed), docker=docker, proxy=proxy, plugins=plugins,
+                    package_manager=manager, firewall=firewall,
                     imagebuilder_url=base + name, imagebuilder_sha256=digest,
                     github_sha=os.getenv('GITHUB_SHA'), run_id=os.getenv('GITHUB_RUN_ID'))
     (dist / 'build-info.json').write_text(json.dumps(metadata, indent=2) + '\n')
     shutil.copy2(checksums, dist / 'imagebuilder-sha256sums.txt')
     shutil.copy2(defaults, dist / 'uci-defaults.txt')
+    (dist / 'official-versions.json').write_text(json.dumps(catalog, indent=2) + '\n')
+    notes = access_notes(metadata)
+    (dist / 'ACCESS.md').write_text(notes, encoding='utf-8')
     files = sorted(dist.iterdir())
     (dist / 'SHA256SUMS').write_text(''.join(f'{sha256(p)}  {p.name}\n' for p in files))
+    if os.getenv('GITHUB_STEP_SUMMARY'):
+        with open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as summary:
+            summary.write(notes)
+    if os.getenv('GITHUB_OUTPUT'):
+        with open(os.environ['GITHUB_OUTPUT'], 'a') as output_file:
+            output_file.write(f'version={version}\n')
     print('产物检查通过：', ', '.join(p.name for p in images))
 
 
@@ -361,6 +473,10 @@ def main():
         raise ValueError('启用 Docker 或代理插件时根分区至少 512 MiB')
     if not args.validate_only:
         build(*values, *features)
+    else:
+        resolved = resolve_release(values[0], official_catalog())
+        plugin_support(resolved, features[2])
+        print(f'参数校验通过，官网解析版本：{resolved}')
 
 
 if __name__ == '__main__':

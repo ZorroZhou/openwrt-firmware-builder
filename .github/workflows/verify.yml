@@ -17,14 +17,20 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        version: ['24.10.6', '25.12.6']
+        version: [latest, previous, third]
         proxy: [none, openclash, nikki]
+        exclude:
+          - version: third
+            proxy: nikki
         include:
-          - version: '25.12.6'
+          - version: latest
             proxy: none
             docker: 'true'
-          - version: '24.10.6'
+          - version: previous
             proxy: nikki
+            docker: 'true'
+          - version: third
+            proxy: none
             docker: 'true'
     env:
       OPENWRT_VERSION: ${{ matrix.version }}
