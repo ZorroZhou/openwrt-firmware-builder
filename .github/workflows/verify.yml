@@ -48,8 +48,11 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends build-essential libncurses-dev zlib1g-dev gawk git gettext libssl-dev xsltproc rsync unzip file wget curl python3 zstd xz-utils
+          sudo apt-get install -y --no-install-recommends qemu-system-x86
       - name: Build and check images
         run: python3 -u scripts/build.py 2>&1 | tee build.log
+      - name: Boot isolated BIOS image and check installed features
+        run: python3 -u scripts/smoke.py
       - name: Save verified images
         uses: actions/upload-artifact@v4
         with:
@@ -63,6 +66,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: log-${{ matrix.version }}-${{ matrix.proxy }}-${{ github.run_id }}-${{ github.run_attempt }}
-          path: build.log
+          path: |
+            build.log
+            smoke.log
           if-no-files-found: ignore
           retention-days: 7

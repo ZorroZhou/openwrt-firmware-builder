@@ -2,8 +2,10 @@ import hashlib
 import importlib.util
 import json
 import os
+import io
 from pathlib import Path
 import tempfile
+import tarfile
 import unittest
 from unittest.mock import patch
 
@@ -16,6 +18,7 @@ def load(name):
 
 
 b, release = load('build'), load('release')
+smoke = load('smoke')
 
 
 class FeatureTests(unittest.TestCase):
@@ -76,6 +79,29 @@ class FeatureTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, '512'):
                 b.build('25.12.6', 'x86-64', 256, 'standard', docker=True)
             fetch.assert_not_called()
+
+    def test_archive_cannot_write_outside_extraction_directory(self):
+        payload = io.BytesIO()
+        with tarfile.open(fileobj=payload, mode='w') as bundle:
+            member = tarfile.TarInfo('../escaped')
+            member.size = 1
+            bundle.addfile(member, io.BytesIO(b'x'))
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            def decompress(args, stdout, check):
+                stdout.write(payload.getvalue())
+            with patch.object(b.subprocess, 'run', side_effect=decompress):
+                with self.assertRaises(tarfile.FilterError):
+                    b.extract(workspace / 'fixture.tar.zst', workspace)
+            self.assertFalse((workspace / 'escaped').exists())
+
+    def test_boot_test_checks_requested_features(self):
+        commands = smoke.guest_checks(dict(lan_ip='192.168.77.1', docker=True, proxy='nikki'))
+        self.assertIn('docker --version', commands)
+        self.assertIn('mihomo -v', commands)
+        self.assertNotIn('FWB_OK', commands)  # Prevent false success from terminal echo.
+        with self.assertRaises(ValueError):
+            smoke.guest_checks(dict(lan_ip='$(id)', docker=False, proxy='none'))
 
 
 class ReleaseTests(unittest.TestCase):
