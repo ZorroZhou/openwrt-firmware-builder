@@ -45,12 +45,14 @@ def guest_checks(info):
     if proxy != 'none':
         checks.append(f'! /etc/init.d/{proxy} enabled')
     # Encode markers so the terminal's echoed command cannot be mistaken for success.
-    wait = ('wait_check() { i=0; until sh -c "$1"; do i=$((i+1)); '
-            '[ "$i" -lt 45 ] || { echo "CHECK_FAILED: $1"; return 1; }; sleep 2; done; }; ')
+    wait = ('#!/bin/sh\nwait_check() {\n echo "CHECK: $1"\n i=0\n'
+            ' until sh -c "$1"; do\n  i=$((i+1))\n'
+            '  [ "$i" -lt 45 ] || { echo "CHECK_FAILED: $1"; return 1; }\n'
+            '  sleep 2\n done\n}\n'
+            "fail() { printf '\\106\\127\\102\\137\\106\\101\\111\\114\\012'; poweroff; exit 1; }\n")
     # procd exposes the console before first-boot UCI defaults have completed.
-    checks = ['wait_check \'' + check + '\'' for check in checks]
-    return (wait + ' && '.join(checks) + " && printf '\\106\\127\\102\\137\\117\\113\\012'"
-            + " || printf '\\106\\127\\102\\137\\106\\101\\111\\114\\012'; poweroff\n")
+    checks = ['wait_check \'' + check + '\' || fail' for check in checks]
+    return (wait + '\n'.join(checks) + "\nprintf '\\106\\127\\102\\137\\117\\113\\012'\npoweroff\n")
 
 
 def smoke(directory):
@@ -84,14 +86,20 @@ def smoke(directory):
                         process.stdin.flush()
                         tail = ''
                     if not sent and re.search(r'root@[^\r\n]+[#]', tail):
-                        process.stdin.write(guest_checks(info).encode())
-                        process.stdin.flush()
+                        # BusyBox's interactive line editor truncates long commands.
+                        # Use short heredoc lines and pace the emulated serial port.
+                        script = "cat > /tmp/fwb-check.sh <<'FWB_SCRIPT'\n" + guest_checks(info)
+                        script += 'FWB_SCRIPT\nsh /tmp/fwb-check.sh\n'
+                        for line in script.splitlines(keepends=True):
+                            process.stdin.write(line.encode())
+                            process.stdin.flush()
+                            time.sleep(0.05)
                         sent = True
                     if re.search(r'(?:^|[\r\n])FWB_OK[\r\n]', tail):
                         success = True
                     if re.search(r'(?:^|[\r\n])FWB_FAIL[\r\n]', tail):
                         raise RuntimeError('Guest feature checks failed')
-                if process.poll() is not None:
+                if success or process.poll() is not None:
                     break
             if not success:
                 raise RuntimeError('No successful guest check marker within 300 seconds')

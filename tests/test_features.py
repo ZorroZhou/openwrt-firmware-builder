@@ -101,6 +101,7 @@ class FeatureTests(unittest.TestCase):
         self.assertIn('docker --version', commands)
         self.assertIn('docker info', commands)
         self.assertIn('until sh -c "$1"', commands)
+        self.assertTrue(all(len(line) < 200 for line in commands.splitlines()))
         self.assertIn('mihomo -v', commands)
         self.assertNotIn('FWB_OK', commands)  # Prevent false success from terminal echo.
         with self.assertRaises(ValueError):
