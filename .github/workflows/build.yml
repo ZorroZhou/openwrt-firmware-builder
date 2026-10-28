@@ -104,6 +104,11 @@ jobs:
       - name: Download, verify and build
         id: builder
         run: python3 -u scripts/build.py 2>&1 | tee build.log
+      - name: Boot-test selected proxy before upload and release
+        if: inputs.proxy != 'none'
+        run: |
+          sudo apt-get install -y --no-install-recommends qemu-system-x86
+          python3 -u scripts/smoke.py
       - name: Upload verified firmware
         id: firmware
         uses: actions/upload-artifact@v4
@@ -118,7 +123,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: failure-log-${{ github.run_id }}-${{ github.run_attempt }}
-          path: build.log
+          path: |
+            build.log
+            smoke.log
           if-no-files-found: ignore
           retention-days: 7
 
