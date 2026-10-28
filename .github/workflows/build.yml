@@ -1,0 +1,75 @@
+name: Build OpenWrt
+run-name: OpenWrt ${{ inputs.version }} / ${{ inputs.preset }} / ${{ inputs.rootfs_mb }} MiB
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '官方完整版本号（支持 24.10.x / 25.12.x，须实际存在）'
+        type: string
+        required: true
+        default: '25.12.6'
+      target:
+        description: 目标平台
+        type: choice
+        options: [x86-64]
+        default: x86-64
+      rootfs_mb:
+        description: 根分区大小（MiB，不是压缩文件大小）
+        type: choice
+        options: ['256', '512', '1024', '2048', '4096']
+        default: '1024'
+      preset:
+        description: 'minimal=官方默认包；standard=默认包加 LuCI HTTPS/curl'
+        type: choice
+        options: [minimal, standard]
+        default: standard
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate inputs and run regression tests
+        env:
+          OPENWRT_VERSION: ${{ inputs.version }}
+          OPENWRT_TARGET: ${{ inputs.target }}
+          ROOTFS_MB: ${{ inputs.rootfs_mb }}
+          PRESET: ${{ inputs.preset }}
+        run: |
+          python3 -m unittest discover -s tests -v
+          python3 scripts/build.py --validate-only
+      - name: Install ImageBuilder host dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends build-essential libncurses-dev zlib1g-dev gawk git gettext libssl-dev xsltproc rsync unzip file wget curl python3 zstd xz-utils
+      - name: Download, verify and build
+        env:
+          OPENWRT_VERSION: ${{ inputs.version }}
+          OPENWRT_TARGET: ${{ inputs.target }}
+          ROOTFS_MB: ${{ inputs.rootfs_mb }}
+          PRESET: ${{ inputs.preset }}
+        run: python3 -u scripts/build.py 2>&1 | tee build.log
+      - name: Upload verified firmware
+        uses: actions/upload-artifact@v4
+        with:
+          name: openwrt-${{ inputs.version }}-x86-64-${{ inputs.preset }}-${{ inputs.rootfs_mb }}MiB-${{ github.run_id }}-${{ github.run_attempt }}
+          path: dist/
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+      - name: Upload failure log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: failure-log-${{ github.run_id }}-${{ github.run_attempt }}
+          path: build.log
+          if-no-files-found: ignore
+          retention-days: 7
