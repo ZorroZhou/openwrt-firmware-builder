@@ -51,6 +51,12 @@ jobs:
             profile: tplink_archer-c7-v5
             proxy: none
             size: auto
+          - version: latest
+            target: armsr/armv8
+            profile: generic
+            proxy: none
+            istore: 'true'
+            mode: bypass
     env:
       OPENWRT_VERSION: ${{ matrix.version }}
       OPENWRT_TARGET: ${{ matrix.target }}

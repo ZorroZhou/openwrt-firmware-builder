@@ -49,7 +49,7 @@ def core_arch(arch):
         return 'amd64-v1', 2, 1, 62
     if arch.startswith('aarch64_'):
         return 'arm64', 2, 1, 183
-    if arch.startswith('arm_'):
+    if arch.startswith('arm_cortex-a') or arch in ('arm_arm1176jzf-s_vfp', 'arm_arm926ej-s', 'arm_xscale'):
         return 'armv5', 1, 1, 40
     if arch.startswith('i386_'):
         return '386-softfloat', 1, 1, 3

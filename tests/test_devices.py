@@ -33,6 +33,8 @@ class DeviceTests(unittest.TestCase):
         self.assertEqual(devices.core_arch('arm_cortex-a7_neon-vfpv4')[0], 'armv5')
         with self.assertRaises(ValueError):
             devices.core_arch('unknown_future_arch')
+        with self.assertRaises(ValueError):
+            devices.core_arch('arm_fa526')  # ARMv4 cannot execute a GOARM=5 core.
 
     def test_nondisk_and_untrusted_istore_combinations_are_rejected(self):
         fixed = {'images': [{'filesystem': 'squashfs', 'name': 'router-sysupgrade.bin'}]}

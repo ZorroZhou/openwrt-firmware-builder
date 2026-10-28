@@ -518,11 +518,12 @@ def access_notes(info):
             f"- Docker：{'已预装' if info['docker'] else '未选择'}\n"
             f"- 代理：{info['proxy']}（如已选择，首次启动保持关闭，导入自己的配置后再启用）\n\n"
             + f"- 路由模式：{'旁路由' if bypass else '主路由'}\n"
-            + f"- LAN IPv4 DHCP：{'关闭' if bypass else '开启'}\n"
+            + f"- LAN IPv4 DHCP 初始配置：{'关闭' if bypass else '开启'}\n"
             + f"- LAN RA/DHCPv6/NDP：{'关闭' if bypass else '遵循官方设备默认配置'}\n"
             + f"- 上游网关：{policy.get('gateway') or '遵循官方 WAN 配置'}\n"
             + f"- 上游 DNS：{' '.join(policy.get('dns', [])) or '遵循官方 WAN 配置'}\n"
             + f"- iStore：{'已预装' if info.get('istore') else '未选择'}\n"
+            + f"- 验证范围：{info.get('validation_scope', '见本次工作流日志')}\n"
             + ''.join(f'- 组件版本：{name} = {value}\n'
                       for name, value in sorted(info.get('proxy_versions', {}).items())) + '\n'
             '先在隔离虚拟机验收。不要与现有路由器在同一网段同时提供 DHCP。\n')
@@ -617,6 +618,9 @@ def build(version, target, size, preset, lan_ip='', docker=False, proxy='none', 
     metadata = dict(builder_version='3.0.0', version=version, version_requested=requested,
                     version_source=VERSION_SOURCE, target=target, profile=profile, rootfs_mib=size or None, arch_packages=arch,
                     network_policy=policy, istore=istore, disk_layout=disk,
+                    validation_scope=('通用平台隔离 QEMU 启动检查；不代表实际硬件或代理流量验收'
+                        if target in ('x86/64', 'armsr/armv8') and profile == 'generic'
+                        else '镜像与可用的跨架构用户态检查；未进行板级启动或 DHCP 报文验收，需检查实际 LAN 配置'),
                     preset=preset, packages=packages, lan_ip=lan_ip, username='root', password_state='unset',
                     luci=('luci-ssl' in installed), docker=docker, proxy=proxy, plugins=plugins,
                     proxy_versions=proxy_versions,
