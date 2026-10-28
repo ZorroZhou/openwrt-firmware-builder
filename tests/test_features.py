@@ -24,7 +24,7 @@ smoke = load('smoke')
 
 class FeatureTests(unittest.TestCase):
     def test_network_input_rejects_injection_and_invalid_hosts(self):
-        for ip in ('192.168.31.100', '10.0.0.1', '172.16.5.1', ''):
+        for ip in ('192.168.50.1', '10.0.0.1', '172.16.5.1', ''):
             b.validate_features(ip)
         for ip in ('8.8.8.8', '127.0.0.1', '192.168.1.0', '192.168.1.255', '::1', "192.168.1.1';reboot", '192.168.1.1/24'):
             with self.subTest(ip=ip), self.assertRaises(ValueError):
@@ -57,9 +57,9 @@ class FeatureTests(unittest.TestCase):
 
     def test_defaults_are_one_shot_and_proxy_stays_disabled(self):
         with tempfile.TemporaryDirectory() as tmp:
-            p = b.write_defaults(Path(tmp), '192.168.31.100', 'openclash')
+            p = b.write_defaults(Path(tmp), '192.168.50.1', 'openclash')
             text = p.read_text()
-            self.assertIn("network.lan.ipaddr='192.168.31.100'", text)
+            self.assertIn("network.lan.ipaddr='192.168.50.1'", text)
             self.assertIn("openclash.config.enable='0'", text)
             self.assertIn('/etc/init.d/openclash disable', text)
             self.assertNotIn('gateway', text)

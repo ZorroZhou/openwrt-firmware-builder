@@ -1,6 +1,6 @@
 # 第三方来源、版权与许可证说明
 
-本仓库由 ZorroZhou 维护，提供官方 OpenWrt 的自动化定制流程。OpenWrt、插件、内核及依赖库的版权属于各自作者；本项目不是这些上游项目的官方发行方，也不表示获得上游背书。
+本仓库提供官方 OpenWrt 的自动化定制流程。OpenWrt、插件、内核及依赖库的版权属于各自作者；本项目不是这些上游项目的官方发行方，也不表示获得上游背书。
 
 ## 主要来源
 
@@ -15,7 +15,7 @@
 | Docker / Moby / containerd / runc / Dockerman | 各上游项目及贡献者 | 选择 Docker 时通过官方 OpenWrt 软件源安装 | [Moby](https://github.com/moby/moby)、[containerd](https://github.com/containerd/containerd)、[runc](https://github.com/opencontainers/runc)、[Dockerman](https://github.com/lisaac/luci-app-dockerman)；各组件许可证分别适用 |
 | iStore 软件中心 | 易有云团队及贡献者 | 选择 iStore 时安装软件中心及相应依赖；不是 iStoreOS 系统 | [上游源码与使用说明](https://github.com/istoreos/istore)、[MIT License](https://github.com/istoreos/istore/blob/main/LICENSE)，原文版权声明为 `Copyright (c) 2021 易有云团队`；依赖及商店应用分别适用各自许可证 |
 | GitHub Actions | GitHub 及各 Action 作者 | 云端调度、下载与产物上传 | [actions/checkout](https://github.com/actions/checkout)、[upload-artifact](https://github.com/actions/upload-artifact)、[download-artifact](https://github.com/actions/download-artifact)；仅用于构建流程 |
-| ImmortalWrt-ImageBuilder 交互设计参考 | wukongdaily 及其贡献者 | 本项目最初需求中的 Actions 参数交互参考 | [上游项目](https://github.com/wukongdaily/ImmortalWrt-ImageBuilder)；其代码及资源遵循原仓库条款 |
+| ImmortalWrt-ImageBuilder 交互设计参考 | wukongdaily 及其贡献者 | Actions 参数交互设计参考 | [上游项目](https://github.com/wukongdaily/ImmortalWrt-ImageBuilder)；其代码及资源遵循原仓库条款 |
 
 表格不是固件所有软件包的穷尽清单。实际包含哪些包及版本，以随附 `.manifest` 为准；OpenClash 的 MIT 许可不覆盖其调用的 GPL 核心、其他面板或第三方数据集。
 
@@ -42,7 +42,7 @@ V3.0 新增可选 iStore，来源为 [istoreos/istore](https://github.com/istore
 
 - OpenWrt 基础包：当前版本的 OpenWrt 官方软件源，保留其签名检查。
 - iStore：按已验证的兼容范围使用作者 `https://istore.istoreos.com/repo-apk/` 签名源，保留源、公钥与原始许可声明；这不是 OpenWrt 官方软件源。本项目与 iStore/iStoreOS 上游无官方隶属或背书关系。
-- Nikki：插件作者提供的 `https://nikkinikki.pages.dev` 签名源，按 OpenWrt 分支与 `x86_64` 架构选择，并随固件保留上游源、公钥。它是 Nikki 上游源，不是 OpenWrt 官方软件源。公钥哈希和文档修订记录在 `configs/plugins.lock.json` / `build-info.json`。
+- Nikki：插件作者提供的 `https://nikkinikki.pages.dev` 签名源，按 OpenWrt 分支与所选设备的软件包架构选择，并随固件保留上游源、公钥。它是 Nikki 上游源，不是 OpenWrt 官方软件源。公钥哈希和文档修订记录在 `configs/plugins.lock.json` / `build-info.json`。
 - OpenClash：按作者的 Release 分发方式安装最新正式版本，并保留其内置更新机制；不添加未经作者确认的软件源。Mihomo 核心按实际选择记录来源和版本。
 
 本项目只生成配置、拼装固件和提供检验流程，不接收或再分发用户的私人订阅与凭据。

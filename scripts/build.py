@@ -104,7 +104,7 @@ def download(url, dest, github=False, allowed_hosts=None):
     for attempt in range(3):
         try:
             request = urllib.request.Request(url, headers={
-                'User-Agent': 'OpenWrt-Firmware-Builder/2.2 (+https://github.com/ZorroZhou/openwrt-firmware-builder)'})
+                'User-Agent': 'OpenWrt-Firmware-Builder/3.1'})
             with urllib.request.urlopen(request, timeout=120) as response, dest.open('wb') as out:
                 allowed = allowed_hosts or ({'github.com', 'release-assets.githubusercontent.com',
                             'objects.githubusercontent.com'} if github else {'downloads.openwrt.org'})
@@ -257,7 +257,7 @@ def validate_features(lan_ip='', docker=False, proxy='none', extra_packages=''):
         try:
             ip = ipaddress.IPv4Address(lan_ip)
         except ipaddress.AddressValueError as exc:
-            raise ValueError('管理 IPv4 格式错误；示例 192.168.31.100，不要填写端口、网址或 /24') from exc
+            raise ValueError('管理 IPv4 格式错误；示例 192.168.50.1，不要填写端口、网址或 /24') from exc
         private = any(ip in ipaddress.IPv4Network(net) for net in
                       ('10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16'))
         if not private or int(str(ip).split('.')[-1]) in (0, 255):

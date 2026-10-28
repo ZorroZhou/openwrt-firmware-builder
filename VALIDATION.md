@@ -1,38 +1,24 @@
-# 验证记录
+# 验证范围与结果
 
-## V3.1 当前变更
+## 自动化检查
 
-- 将手填 target/Profile 合并为品牌/型号设备下拉框，官方两代最新小版本目录去重后共 1969 项。相同 Profile 在不同目标下保持独立，构建前继续实时核对版本支持情况。
-- 移除主/旁路由、上游网关和 DNS 输入，以及对应注入、元数据和启动断言。保留设备官方 DHCP/IPv6/网关/DNS 默认值，安装后自行配置。
-- 49 项单元与失败路径测试、四个工作流 actionlint 通过，包括设备选择映射、重复去重、跨目标区分，以及网络服务不被覆盖的回归检查。
-- 以下 V3.0 记录仅为历史证据，其模式切换行为已从当前代码移除；不将历史 CI 结果冒充本轮构建结果。
+- 49 项单元与失败路径测试通过，四个工作流通过 actionlint 语法检查。
+- [V3.1 构建矩阵](https://github.com/ZorroZhou/openwrt-firmware-builder/actions/runs/40638371282)：8/8 成功，覆盖两代 OpenWrt、x86/ARM64 代理组件、Docker、iStore 和 MIPS 固定闪存代表目标。
+- 设备菜单由两代最新小版本的官方目录合并，1969 个选项自动绑定目标和 Profile；构建前实时核对所选版本。测试覆盖未知选择拒绝、跨目标区分、去重及元数据不符。
+- 输入测试覆盖 IPv4、软件包名、版本范围、架构及字节序；镜像测试覆盖缺失、路径越界、容量策略及校验失败。未匹配的第三方组件或源会明确失败。
+- 网络注入只定制已有 LAN 的管理地址，不修改官方 DHCP、IPv6、上游网关或 DNS；有不覆盖这些服务的回归检查。
 
-## V3.0 历史开发验收范围
+## 官方目录与来源
 
-日期：2026-10-28。当前公开描述使用通用测试环境，不包含个人设备或部署信息。
+- 25.12.6：核对官方 .overview.json 与各目标 profiles.json，90 个 target/subtarget、1941 个 Profile。
+- 24.10.8：同样核对，82 个 target/subtarget、1718 个 Profile。跨版本 Profile 不代表不同物理设备，不能直接相加。
+- iStore 使用锁定公钥哈希的作者 APK 签名源；不执行在线安装器，不开放会降低临时签名检查的 opkg 集成路径。
+- ImageBuilder 不重编译 initramfs 内核；仍检查可拼装的 factory/sysupgrade/磁盘镜像，只有 initramfs 的设备提前拒绝。
 
-- 47 项单元与失败路径测试通过；四个工作流通过 actionlint。
-- 最新两代菜单从官网生成，共 16 项（25.12.0–25.12.6、24.10.0–24.10.8）；旧第三代及第三代别名有拒绝测试。
-- 多平台测试覆盖目标/Profile/版本对应关系、架构及字节序匹配、未知核心架构拒绝、固定闪存禁止套用磁盘分区、Docker/iStore 不兼容组合拒绝。
-- 网络策略测试覆盖上游网关、DNS、自身地址冲突、缺字段与注入输入；旁路由关闭 LAN IPv4 DHCP、RA/DHCPv6/NDP，同时不停止 dnsmasq，不猜测端口名称。
-- 镜像测试覆盖按官方设备元数据选择文件、缺失和校验失败；x86 保留已有磁盘结构与分区检查。
-- 实际从 25.12.6 的官方 .overview.json 和全部 profiles.json 导出 90 个 target/subtarget、1941 个设备 Profile，与总览逐目标核对。目录里的 malta/be 没有对应已发布 Profile，已改用 Firmware Selector 的权威总览，而非把目录存在等同于支持设备。
-- 首轮实构发现官方 Profile 含有源码构建的 initramfs 内核，ImageBuilder 不重新生成此类内核。已按工具实际能力区分，新增失败路径测试；没有跳过其余 factory/sysupgrade/磁盘镜像检查。
-- iStore 审查了作者 README、网络安装器与包内 is-opkg：APK 源提供公钥，已锁定公钥哈希。opkg 包装器会剥除临时配置的签名检查，因此目前拒绝该集成路径；没有执行在线安装器或关闭全局源签名检查。
-- 24.10.8 的完整官方目录也已导出并逐目标核对：82 个 target/subtarget、1718 个 Profile。跨版本 Profile 数不能当作不同硬件数量相加。
-- [V3.0 矩阵](https://github.com/ZorroZhou/openwrt-firmware-builder/actions/runs/40634880054) 8/8 全部成功，包含此前耗时较长的 24.10 x86 Nikki + Docker。已通过的其他组合包括 x86/ARM64 OpenClash、ARM64 Nikki、ARM64 Docker、x86/ARM64 iStore 旁路由及 MIPS 固定闪存镜像。
-- [ARM64 组合验收](https://github.com/ZorroZhou/openwrt-firmware-builder/actions/runs/40635187062) build 成功：25.12.6、armsr/armv8 generic、standard、512 MiB、iStore + OpenClash、旁路由。通过 EFI 隔离启动与模式检查，产物保存在该运行的 Artifacts；此次未公开发布 Release。实际包版本记录在 build-info.json、ACCESS.md 和 manifest 中。
-- 当前工作流中的 192.168.77.1 以及组合测试使用的上游 192.168.77.254 均为受限 QEMU 网络的一次性测试配置，不是任何现有设备地址，也不表示上游连通性已验证。已通过的 x86 generic 验证 BIOS 启动，ARM64 generic 验证 virt + EFI；其他板级设备只能按日志记录镜像与跨架构用户态检查，不能宣称已启动硬件。
-- 非 x86 Release 文本使用本地模拟 API 检查：目标/Profile 正确，固定闪存显示“官方设备布局”，不出现 None MiB；没有为此测试向外部发布内容。
+## 测试边界
 
-## 已确认的历史发布基础
+192.168.77.1 仅为一次性隔离 CI 固件的合成管理地址。QEMU 使用受限网络与快照；不连接部署环境。
 
-- [V2.3 最终矩阵](https://github.com/ZorroZhou/openwrt-firmware-builder/actions/runs/40624286914) 已于 2026-10-28 完成，11/11 成功；此前慢任务已核对为成功。
-- [V2.3 手动构建与发布](https://github.com/ZorroZhou/openwrt-firmware-builder/actions/runs/40624437242) 的 build/release 均成功，所选代理在上传前通过隔离启动检查。
-- 此前的矩阵不代表 V3.0 新设备、iStore 或模式切换已实机验收。
+x86/64/generic 检查 QEMU BIOS 启动，armsr/armv8/generic 检查 virt + EFI 启动。其他板级设备仅进行镜像和可用的跨架构用户态检查，不表述为板级启动验收。
 
-## 检查边界
-
-所有设备入口来自官方目录，不代表所有 Profile 都已有可用 ImageBuilder 或第三方预编译包；缺少对应资源时明确失败。没有逐台硬件刷写、验证无线/交换机/存储，或测试真实代理订阅与容器负载。
-
-旁路由模式不修改其他设备配置，不自动接管全网。Git 历史和既有标签未被重写；当前文件清理不能删除旧提交或第三方缓存中的历史内容。
+官方设备目录覆盖不等于全部 Profile 都有可用 ImageBuilder 或第三方包，也不等于逐台硬件刷写成功。无线、端口、交换机、存储、真实代理流量和容器负载仍需按实际设备测试。
