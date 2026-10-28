@@ -15,7 +15,7 @@ def render_workflow(text, versions):
              '        type: choice\n        required: true\n        options:\n'
              + ''.join(f"          - '{v}'\n" for v in versions)
              + f"        default: '{versions[0]}'\n")
-    result, count = re.subn(r'^      version:\n.*?(?=^      target:)', lambda _: block,
+    result, count = re.subn(r'^      version:\n.*?(?=^      device:)', lambda _: block,
                             text, flags=re.MULTILINE | re.DOTALL)
     if count != 1:
         raise ValueError('工作流 version 输入结构发生变化，拒绝覆盖')

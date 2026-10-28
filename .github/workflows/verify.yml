@@ -32,7 +32,6 @@ jobs:
             profile: generic
             proxy: none
             istore: 'true'
-            mode: bypass
           - version: latest
             target: armsr/armv8
             profile: generic
@@ -56,14 +55,10 @@ jobs:
             profile: generic
             proxy: none
             istore: 'true'
-            mode: bypass
     env:
       OPENWRT_VERSION: ${{ matrix.version }}
       OPENWRT_TARGET: ${{ matrix.target }}
       PROFILE: ${{ matrix.profile }}
-      ROUTER_MODE: ${{ matrix.mode || 'main' }}
-      UPSTREAM_GATEWAY: ${{ matrix.mode == 'bypass' && '192.168.77.254' || '' }}
-      UPSTREAM_DNS: ${{ matrix.mode == 'bypass' && '192.168.77.254' || '' }}
       ISTORE: ${{ matrix.istore || 'false' }}
       ROOTFS_MB: ${{ matrix.size || '512' }}
       PRESET: standard

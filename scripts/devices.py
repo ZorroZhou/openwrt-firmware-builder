@@ -1,12 +1,19 @@
-"""Official device metadata, conservative feature matching and network policy."""
+"""Official device metadata, conservative feature matching and feature checks."""
 import hashlib
-import ipaddress
 import json
 from pathlib import Path
 import re
 import urllib.request
 
 ORIGIN = 'https://downloads.openwrt.org'
+
+
+def selected_device(label):
+    catalog = Path(__file__).resolve().parents[1] / 'configs/devices.json'
+    selected = json.loads(catalog.read_text(encoding='utf-8'))['devices'].get(label)
+    if not selected:
+        raise ValueError('设备选择不在当前官方菜单中，请刷新页面重新选择')
+    return target_name(selected['target']), selected['profile']
 
 
 def official_json(url):
@@ -89,42 +96,6 @@ def feature_policy(target, data, profile, size, docker, proxy, istore):
 def version_manager(version):
     # Only for early iStore policy. Actual manager is always checked from ImageBuilder.
     return 'apk' if version.startswith('25.12.') else 'unknown'
-
-
-def network_policy(mode, address, gateway='', dns=''):
-    if mode not in ('main', 'bypass'):
-        raise ValueError('路由模式必须为 main 或 bypass')
-    ip = ipaddress.IPv4Address(address)
-    subnet = ipaddress.IPv4Network(f'{ip}/24', strict=False)
-    if mode == 'main' and (gateway or dns):
-        raise ValueError('上游网关/DNS 输入仅用于旁路由模式，主路由保留官方 WAN 配置')
-    servers = dns.split()
-    if mode == 'bypass':
-        if not gateway or not servers:
-            raise ValueError('旁路由必须填写上游网关和 DNS，不猜测主路由地址')
-        gw = ipaddress.IPv4Address(gateway)
-        if gw not in subnet or gw == ip or gw in (subnet.network_address, subnet.broadcast_address):
-            raise ValueError('上游网关必须是相同 /24 网段中另一个有效主机地址')
-        if len(servers) > 3:
-            raise ValueError('最多填写三个 DNS IPv4，以空格分隔')
-        for server in servers:
-            value = ipaddress.IPv4Address(server)
-            if value == ip or value.is_multicast or value.is_unspecified or value.is_loopback or value.is_reserved:
-                raise ValueError('DNS 地址不可为自身、回环、多播或保留地址')
-    return dict(mode=mode, dhcpv4=('enabled' if mode == 'main' else 'disabled'),
-                ipv6_lan=('official-defaults' if mode == 'main' else 'RA/DHCPv6/NDP disabled'),
-                gateway=gateway, dns=servers)
-
-
-def network_commands(policy):
-    commands = ['uci -q get dhcp.lan >/dev/null']
-    commands += ["uci set dhcp.lan.ignore='" + ('0' if policy['mode'] == 'main' else '1') + "'"]
-    if policy['mode'] == 'bypass':
-        commands += [f"uci set dhcp.lan.{service}='disabled'" for service in ('ra', 'dhcpv6', 'ndp')]
-        commands += [f"uci set network.lan.gateway='{policy['gateway']}'",
-                     'uci -q delete network.lan.dns || true']
-        commands += [f"uci add_list network.lan.dns='{server}'" for server in policy['dns']]
-    return commands + ['uci commit network', 'uci commit dhcp']
 
 
 def check_outputs(output, selected):

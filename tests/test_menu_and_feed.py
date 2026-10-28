@@ -28,7 +28,7 @@ class MenuTests(unittest.TestCase):
             for version in versions:
                 self.assertIn("- '" + version + "'", text)
             self.assertNotIn("- '22.03.7'", text)
-            self.assertIn('      target:', text)
+            self.assertIn('      device:', text)
             self.assertIn("default: '25.12.6'", text)
 
     def test_menu_renderer_refuses_unknown_structure(self):

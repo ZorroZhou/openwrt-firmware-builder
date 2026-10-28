@@ -63,12 +63,6 @@ def guest_checks(info):
         if not re.fullmatch(r'[0-9.]+', ip):
             raise ValueError('Invalid test IP')
         checks.append(f'test "$(uci -q get network.lan.ipaddr)" = "{ip}"')
-    policy = info.get('network_policy')
-    if policy:
-        checks.append('test "$(uci -q get dhcp.lan.ignore)" = ' + ('0' if policy['mode'] == 'main' else '1'))
-        if policy['mode'] == 'bypass':
-            checks += [f'test "$(uci -q get dhcp.lan.{s})" = disabled' for s in ('ra', 'dhcpv6', 'ndp')]
-            checks.append(f'test "$(uci -q get network.lan.gateway)" = "{policy["gateway"]}"')
     if info.get('istore'):
         checks += ['test -x /bin/is-opkg', 'test -s /etc/apk/keys/istore.pem',
                    'test -s /etc/apk/repositories.d/istore.list']

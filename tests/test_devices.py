@@ -47,25 +47,6 @@ class DeviceTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, '签名'):
             devices.feature_policy('x86/64', data, fixed, 512, False, 'none', True)
 
-    def test_bypass_disables_all_lan_servers_without_stopping_dns(self):
-        policy = devices.network_policy('bypass', '192.168.77.1', '192.168.77.254', '192.168.77.254 1.1.1.1')
-        commands = '\n'.join(devices.network_commands(policy))
-        for text in ("dhcp.lan.ignore='1'", "dhcp.lan.ra='disabled'", "dhcp.lan.dhcpv6='disabled'",
-                     "dhcp.lan.ndp='disabled'", "network.lan.gateway='192.168.77.254'"):
-            self.assertIn(text, commands)
-        self.assertNotIn('/etc/init.d/dnsmasq', commands)
-        self.assertNotIn('eth0', commands)
-        self.assertIn("dhcp.lan.ignore='0'", '\n'.join(devices.network_commands(devices.network_policy('main', '192.168.77.1'))))
-
-    def test_gateway_dns_validation_precedes_build(self):
-        for gateway, dns in (('', ''), ('192.168.77.1', '1.1.1.1'), ('192.168.1.1', '1.1.1.1'),
-                             ('192.168.77.255', '1.1.1.1'), ('192.168.77.254', '192.168.77.1'),
-                             ('192.168.77.254', '1.1.1.1;id'), ('192.168.77.254', '::1')):
-            with self.subTest(gateway=gateway, dns=dns), self.assertRaises(ValueError):
-                devices.network_policy('bypass', '192.168.77.1', gateway, dns)
-        with self.assertRaises(ValueError):
-            devices.network_policy('main', '192.168.77.1', '192.168.77.254')
-
     def test_device_image_names_and_checksums_not_x86_partitions(self):
         with tempfile.TemporaryDirectory() as tmp:
             directory = Path(tmp)

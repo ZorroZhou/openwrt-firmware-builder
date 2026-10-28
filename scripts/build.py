@@ -289,7 +289,7 @@ def package_selection(preset, docker, proxy, extra_packages, firewall='nftables'
     return list(dict.fromkeys(packages + extra_packages.split()))
 
 
-def write_defaults(overlay, lan_ip, proxy, policy=None):
+def write_defaults(overlay, lan_ip, proxy):
     defaults = overlay / 'etc/uci-defaults/99-firmware-builder'
     defaults.parent.mkdir(parents=True, exist_ok=True)
     lines = ['#!/bin/sh', 'set -e']
@@ -301,8 +301,6 @@ def write_defaults(overlay, lan_ip, proxy, policy=None):
         lines += [f"uci set {proxy}.config.enabled='0'" if proxy == 'nikki'
                   else "uci set openclash.config.enable='0'", f'uci commit {proxy}',
                   f'/etc/init.d/{proxy} disable']
-    if policy:
-        lines += devices.network_commands(policy)
     lines += ['exit 0', '']
     defaults.write_text('\n'.join(lines))
     defaults.chmod(0o755)
@@ -503,8 +501,6 @@ def check_openclash_language(builder):
 
 def access_notes(info):
     ip = info['lan_ip']
-    policy = info.get('network_policy', {})
-    bypass = policy.get('mode') == 'bypass'
     web = f'https://{ip}/' if info['luci'] else '未预装 LuCI 网页管理界面（minimal 基础系统）'
     return (f"# OpenWrt {info['version']} 使用说明\n\n"
             f"- 目标：{info.get('target', 'x86/64')} / {info.get('profile', 'generic')}\n- 管理 IPv4：**{ip}**\n"
@@ -517,11 +513,7 @@ def access_notes(info):
             f"- 简体中文：{'LuCI 及所选管理插件中文资源已包含' if info['luci'] else '无网页界面，不追加 LuCI 语言包'}\n"
             f"- Docker：{'已预装' if info['docker'] else '未选择'}\n"
             f"- 代理：{info['proxy']}（如已选择，首次启动保持关闭，导入自己的配置后再启用）\n\n"
-            + f"- 路由模式：{'旁路由' if bypass else '主路由'}\n"
-            + f"- LAN IPv4 DHCP 初始配置：{'关闭' if bypass else '开启'}\n"
-            + f"- LAN RA/DHCPv6/NDP：{'关闭' if bypass else '遵循官方设备默认配置'}\n"
-            + f"- 上游网关：{policy.get('gateway') or '遵循官方 WAN 配置'}\n"
-            + f"- 上游 DNS：{' '.join(policy.get('dns', [])) or '遵循官方 WAN 配置'}\n"
+            + '- 网络服务：保留官方设备 DHCP、IPv6、网关及 DNS 默认配置；安装后自行配置。\n'
             + f"- iStore：{'已预装' if info.get('istore') else '未选择'}\n"
             + f"- 验证范围：{info.get('validation_scope', '见本次工作流日志')}\n"
             + ''.join(f'- 组件版本：{name} = {value}\n'
@@ -530,7 +522,7 @@ def access_notes(info):
 
 
 def build(version, target, size, preset, lan_ip='', docker=False, proxy='none', extra_packages='',
-          profile='generic', mode='main', gateway='', dns='', istore=False):
+          profile='generic', istore=False):
     validate(version, target, size, preset)
     validate_features(lan_ip, docker, proxy, extra_packages)
     if (docker or proxy != 'none' or istore) and size and size < 512:
@@ -550,11 +542,10 @@ def build(version, target, size, preset, lan_ip='', docker=False, proxy='none', 
     arch = device_data['arch_packages']
     print(f'官方版本解析：{requested} -> {version}；最新两代：{latest_two(catalog)}', flush=True)
     lan_ip = lan_ip or '192.168.1.1'
-    policy = devices.network_policy(mode, lan_ip, gateway, dns)
     workspace.mkdir()
     workspace = workspace.resolve()
     overlay = workspace / 'files'
-    defaults = write_defaults(overlay, lan_ip, proxy, policy)
+    defaults = write_defaults(overlay, lan_ip, proxy)
     install_notices(overlay)
     base = f'https://downloads.openwrt.org/releases/{version}/targets/{target}/'
     checksums = workspace / 'sha256sums'
@@ -615,9 +606,9 @@ def build(version, target, size, preset, lan_ip='', docker=False, proxy='none', 
             raise ValueError('无法记录代理插件实际安装版本')
         if proxy == 'openclash':
             proxy_versions['mihomo-core'] = plugins[1]['release']
-    metadata = dict(builder_version='3.0.0', version=version, version_requested=requested,
+    metadata = dict(builder_version='3.1.0', version=version, version_requested=requested,
                     version_source=VERSION_SOURCE, target=target, profile=profile, rootfs_mib=size or None, arch_packages=arch,
-                    network_policy=policy, istore=istore, disk_layout=disk,
+                    network_configuration='official-device-defaults', istore=istore, disk_layout=disk,
                     validation_scope=('通用平台隔离 QEMU 启动检查；不代表实际硬件或代理流量验收'
                         if target in ('x86/64', 'armsr/armv8') and profile == 'generic'
                         else '镜像与可用的跨架构用户态检查；未进行板级启动或 DHCP 报文验收，需检查实际 LAN 配置'),
@@ -661,7 +652,9 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--validate-only', action='store_true')
     args = parser.parse_args()
-    values = (os.environ['OPENWRT_VERSION'], os.environ['OPENWRT_TARGET'],
+    target, profile = (devices.selected_device(os.environ['DEVICE']) if os.getenv('DEVICE')
+                       else (os.environ['OPENWRT_TARGET'], os.getenv('PROFILE', 'generic')))
+    values = (os.environ['OPENWRT_VERSION'], target,
               (0 if os.environ['ROOTFS_MB'] == 'auto' else int(os.environ['ROOTFS_MB'])), os.environ['PRESET'])
     docker_raw = os.getenv('DOCKER', 'false')
     if docker_raw not in ('true', 'false'):
@@ -672,11 +665,9 @@ def main():
     if istore_raw not in ('true', 'false'):
         raise ValueError('ISTORE 必须为 true 或 false')
     istore = istore_raw == 'true'
-    extra = dict(profile=os.getenv('PROFILE', 'generic'), mode=os.getenv('ROUTER_MODE', 'main'),
-                 gateway=os.getenv('UPSTREAM_GATEWAY', '').strip(), dns=os.getenv('UPSTREAM_DNS', '').strip(), istore=istore)
+    extra = dict(profile=profile, istore=istore)
     validate(*values)
     validate_features(*features)
-    devices.network_policy(extra['mode'], features[0] or '192.168.1.1', extra['gateway'], extra['dns'])
     if (features[1] or features[2] != 'none' or istore) and values[2] and values[2] < 512:
         raise ValueError('启用 Docker 或代理插件时根分区至少 512 MiB')
     if not args.validate_only:
