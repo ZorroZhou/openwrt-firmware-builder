@@ -51,6 +51,13 @@ def publish(directory):
     body = (f"OpenWrt {info['version']} / x86-64 / {info['rootfs_mib']} MiB\n\n"
             f"Preset: {info['preset']}; Docker: {info['docker']}; Proxy: {info['proxy']}\n\n"
             + notes + '\n\n'
+            f"Sources: [OpenWrt {info['version']}](https://github.com/openwrt/openwrt/tree/v{info['version']}); "
+            '[OpenClash](https://github.com/vernesong/OpenClash); '
+            '[Mihomo](https://github.com/MetaCubeX/mihomo); '
+            '[Nikki](https://github.com/nikkinikki-org/OpenWrt-nikki).\n\n'
+            'See attached THIRD_PARTY_NOTICES.md, LICENSE-*.txt, SOURCE-REFERENCES.md and manifest '
+            'for component licenses and source references. Attribution alone does not fulfill all '
+            'corresponding-source obligations.\n\n'
             'Verify downloaded files using SHA256SUMS. Build checks do not replace boot testing.\n\n'
             f'https://github.com/{repo}/actions/runs/{run_id}')
     api = f'https://api.github.com/repos/{repo}/releases'

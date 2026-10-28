@@ -40,6 +40,9 @@ def guest_checks(info):
                    'test "$(uci -q get openclash.config.enable)" = 0']
     elif proxy == 'nikki':
         checks += ['mihomo -v', 'test "$(uci -q get nikki.config.enabled)" = 0']
+        repo = ('/etc/opkg/customfeeds.conf' if info['package_manager'] == 'opkg'
+                else '/etc/apk/repositories.d/customfeeds.list')
+        checks += [f'grep -q "https://nikkinikki.pages.dev/openwrt-" {repo}']
     elif proxy != 'none':
         raise ValueError('Invalid test proxy')
     if proxy != 'none':

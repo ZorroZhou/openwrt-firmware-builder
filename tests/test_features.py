@@ -69,10 +69,13 @@ class FeatureTests(unittest.TestCase):
 
     def test_lock_entries_are_pinned_and_well_formed(self):
         lock = json.loads((Path(__file__).resolve().parents[1] / 'configs/plugins.lock.json').read_text())
-        entries = list(lock['openclash'].values()) + list(lock['nikki'].values())
+        entries = list(lock['openclash'].values())
         for entry in entries:
             self.assertIn('/releases/download/v', entry['url'])
             self.assertNotIn('/latest/', entry['url'])
+            self.assertRegex(entry['sha256'], r'^[0-9a-f]{64}$')
+        for entry in lock['nikki']['keys'].values():
+            self.assertTrue(entry['url'].startswith('https://nikkinikki.pages.dev/'))
             self.assertRegex(entry['sha256'], r'^[0-9a-f]{64}$')
 
     def test_installed_packages_are_checked(self):
@@ -105,7 +108,7 @@ class FeatureTests(unittest.TestCase):
             self.assertFalse((workspace / 'escaped').exists())
 
     def test_boot_test_checks_requested_features(self):
-        commands = smoke.guest_checks(dict(lan_ip='192.168.77.1', docker=True, proxy='nikki'))
+        commands = smoke.guest_checks(dict(lan_ip='192.168.77.1', docker=True, proxy='nikki', package_manager='apk'))
         self.assertIn('docker --version', commands)
         self.assertIn('docker info', commands)
         self.assertIn('until sh -c "$1"', commands)

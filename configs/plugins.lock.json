@@ -17,15 +17,22 @@
     }
   },
   "nikki": {
-    "24.10": {
-      "url": "https://github.com/nikkinikki-org/OpenWrt-nikki/releases/download/v1.26.2/nikki_x86_64-openwrt-24.10.tar.gz",
-      "sha256": "e8f14657155612f96e651ec452a59cd3e89b3d390c501883917bd8a0de7673fa",
-      "release": "v1.26.2"
-    },
-    "25.12": {
-      "url": "https://github.com/nikkinikki-org/OpenWrt-nikki/releases/download/v1.26.2/nikki_x86_64-openwrt-25.12.tar.gz",
-      "sha256": "510c4dd3204842ccf41f567198bf95c03bd407173dcdcee0a259af6d5b43fa05",
-      "release": "v1.26.2"
+    "base_url": "https://nikkinikki.pages.dev",
+    "branches": [
+      "24.10",
+      "25.12"
+    ],
+    "documentation": "https://github.com/nikkinikki-org/OpenWrt-nikki/blob/78e1a751d55ed0762811f054ee699049473da7b8/feed.sh",
+    "source_ref": "78e1a751d55ed0762811f054ee699049473da7b8",
+    "keys": {
+      "opkg": {
+        "url": "https://nikkinikki.pages.dev/key-build.pub",
+        "sha256": "121ce5486b48bb6e3cf0fbca05700ff98d004b55dbfb5f38a3402eda5f781191"
+      },
+      "apk": {
+        "url": "https://nikkinikki.pages.dev/public-key.pem",
+        "sha256": "677ef1af372065e2e856175363e2da9471a6c5c6443563b912c8d325bfa1fbad"
+      }
     }
   }
 }

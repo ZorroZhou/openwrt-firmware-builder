@@ -27,7 +27,7 @@ CHANNELS = {'最新大版本': 0, '上一大版本': 1, '上两个大版本': 2,
 
 def validate(version, target, size, preset):
     if version not in CHANNELS and not re.fullmatch(r'[1-9][0-9]\.[0-9]{2}\.(0|[1-9][0-9]*)', version):
-        raise ValueError('请选择最新/上一/上两个大版本；不接受 snapshot、RC 或下载 URL')
+        raise ValueError('请选择菜单中的完整稳定版本号；不接受 snapshot、RC 或下载 URL')
     if target != 'x86-64' or size not in SIZES or preset not in PRESETS:
         raise ValueError('不支持的 target、根分区大小或 preset')
 
@@ -67,12 +67,19 @@ def resolve_release(selection, catalog):
     return selection
 
 
+def available_releases(catalog):
+    majors = {v.split('.')[0] for v in latest_three(catalog)}
+    return sorted({v for v in catalog['versions_list']
+                   if re.fullmatch(r'[1-9][0-9]\.[0-9]{2}\.[0-9]+', v) and v.split('.')[0] in majors},
+                  key=lambda v: tuple(map(int, v.split('.'))), reverse=True)
+
+
 def plugin_support(version, proxy):
     if proxy == 'nikki':
         lock = json.loads((Path(__file__).resolve().parents[1] / 'configs/plugins.lock.json').read_text())
         branch = '.'.join(version.split('.')[:2])
-        if branch not in lock['nikki']:
-            raise ValueError(f'Nikki 没有锁定兼容 {branch} 的上游包；请选择 none 或 OpenClash，不混用其他版本包')
+        if branch not in lock['nikki']['branches']:
+            raise ValueError(f'Nikki 上游源不支持 {branch}；请选择 none 或 OpenClash，不混用其他版本包')
 
 
 def detect_runtime(config):
@@ -89,11 +96,11 @@ def detect_runtime(config):
     return manager, 'nftables' if fw4 else 'iptables'
 
 
-def download(url, dest, github=False):
+def download(url, dest, github=False, allowed_hosts=None):
     for attempt in range(3):
         try:
             with urllib.request.urlopen(url, timeout=120) as response, dest.open('wb') as out:
-                allowed = ({'github.com', 'release-assets.githubusercontent.com',
+                allowed = allowed_hosts or ({'github.com', 'release-assets.githubusercontent.com',
                             'objects.githubusercontent.com'} if github else {'downloads.openwrt.org'})
                 parsed = urlparse(response.url)
                 if parsed.scheme != 'https' or parsed.hostname not in allowed:
@@ -310,6 +317,8 @@ def prepare_plugin(builder, workspace, overlay, version, proxy, manager):
     if proxy == 'none':
         return []
     lock = json.loads((Path(__file__).resolve().parents[1] / 'configs/plugins.lock.json').read_text())
+    if proxy == 'nikki':
+        return prepare_nikki_feed(builder, workspace, overlay, version, manager, lock['nikki'])
     records, packages = [], []
     suffix = '.apk' if manager == 'apk' else '.ipk'
     if proxy == 'openclash':
@@ -326,19 +335,6 @@ def prepare_plugin(builder, workspace, overlay, version, proxy, manager):
             raise ValueError('OpenClash 核心不是 ELF 可执行文件')
         core.chmod(0o755)
         records.append(core_entry)
-    else:
-        entry = lock[proxy]['.'.join(version.split('.')[:2])]
-        archive = fetch_locked(entry, workspace)
-        records.append(entry)
-        extracted = workspace / 'nikki-packages'
-        with tarfile.open(archive) as bundle:
-            bundle.extractall(extracted, filter='data')
-        for name in ('mihomo-meta', 'nikki', 'luci-app-nikki', 'luci-i18n-nikki-zh-cn'):
-            separator = '-' if manager == 'apk' else '_'
-            candidates = list(extracted.glob(name + separator + '*' + suffix))
-            if len(candidates) != 1:
-                raise ValueError(f'Nikki 归档缺少唯一的 {name}{suffix}')
-            packages.append(candidates[0])
     for package in packages:
         shutil.copy2(package, builder / 'packages' / package.name)
     if manager == 'apk':
@@ -351,6 +347,49 @@ def prepare_plugin(builder, workspace, overlay, version, proxy, manager):
                  str((builder / 'keys/local-private-key.pem').resolve()),
                  str((builder / 'packages' / package.name).resolve())], builder)
     return records
+
+
+def prepare_nikki_feed(builder, workspace, overlay, version, manager, feed):
+    branch = '.'.join(version.split('.')[:2])
+    if branch not in feed['branches']:
+        raise ValueError('Nikki 上游源不支持当前版本')
+    url = f"{feed['base_url']}/openwrt-{branch}/x86_64/nikki"
+    key_info = feed['keys'][manager]
+    key = workspace / ('nikki.pub' if manager == 'opkg' else 'nikki.pem')
+    download(key_info['url'], key, allowed_hosts={'nikkinikki.pages.dev'})
+    verify(key, key_info['sha256'])
+    if manager == 'opkg':
+        fingerprint = subprocess.check_output([str((builder / 'staging_dir/host/bin/usign').resolve()),
+                                              '-F', '-p', str(key)], text=True).strip()
+        if not re.fullmatch(r'[0-9a-fA-F]{16}', fingerprint):
+            raise ValueError('Nikki usign 公钥指纹不合法')
+        shutil.copy2(key, builder / 'keys' / fingerprint)
+        target_key = overlay / 'etc/opkg/keys' / fingerprint
+        source = f'src/gz nikki {url}\n'
+        builder_repo, runtime_repo = builder / 'repositories.conf', overlay / 'etc/opkg/customfeeds.conf'
+    else:
+        shutil.copy2(key, builder / 'keys/nikki.pem')
+        target_key = overlay / 'etc/apk/keys/nikki.pem'
+        source = f'{url}/packages.adb\n'
+        builder_repo, runtime_repo = builder / 'repositories', overlay / 'etc/apk/repositories.d/customfeeds.list'
+    target_key.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(key, target_key)
+    runtime_repo.parent.mkdir(parents=True, exist_ok=True)
+    runtime_repo.write_text(source)
+    with builder_repo.open('a') as repository:
+        repository.write('\n# Nikki upstream signed repository\n' + source)
+    return [dict(provider='nikkinikki-org/OpenWrt-nikki', installation='signed-upstream-feed',
+                 feed_url=url, key=key_info, source_ref=feed['source_ref'],
+                 documentation=feed['documentation'])]
+
+
+def install_notices(overlay):
+    root = Path(__file__).resolve().parents[1]
+    target = overlay / 'usr/share/firmware-builder'
+    target.mkdir(parents=True)
+    shutil.copy2(root / 'THIRD_PARTY_NOTICES.md', target / 'THIRD_PARTY_NOTICES.md')
+    shutil.copy2(root / 'docs/PLUGIN-UPDATES.md', target / 'PLUGIN-UPDATES.md')
+    shutil.copytree(root / 'licenses', target / 'licenses')
 
 
 def verify_installed(manifests, required):
@@ -404,6 +443,7 @@ def build(version, target, size, preset, lan_ip='', docker=False, proxy='none', 
     workspace = workspace.resolve()
     overlay = workspace / 'files'
     defaults = write_defaults(overlay, lan_ip, proxy)
+    install_notices(overlay)
     base = f'https://downloads.openwrt.org/releases/{version}/targets/x86/64/'
     checksums = workspace / 'sha256sums'
     download(base + 'sha256sums', checksums)
@@ -414,6 +454,8 @@ def build(version, target, size, preset, lan_ip='', docker=False, proxy='none', 
     builder = extract(archive, workspace)
     config = (builder / '.config').read_text()
     manager, firewall = detect_runtime(config)
+    if 'CONFIG_SIGNATURE_CHECK=y' not in config.splitlines():
+        raise ValueError('ImageBuilder 未开启软件源签名检查，停止构建')
     if proxy == 'nikki' and firewall != 'nftables':
         raise ValueError('Nikki 仅支持 fw4/nftables')
     # ImageBuilder clears MAKEFLAGS in recursive invocations: persist the setting.
@@ -438,7 +480,7 @@ def build(version, target, size, preset, lan_ip='', docker=False, proxy='none', 
     dist.mkdir()
     for path in images + manifests:
         shutil.copy2(path, dist / path.name)
-    metadata = dict(builder_version='2.1.0', version=version, version_requested=requested,
+    metadata = dict(builder_version='2.2.0', version=version, version_requested=requested,
                     version_source=VERSION_SOURCE, target=target, profile='generic', rootfs_mib=size,
                     preset=preset, packages=packages, lan_ip=lan_ip, username='root', password_state='unset',
                     luci=('luci-ssl' in installed), docker=docker, proxy=proxy, plugins=plugins,
@@ -451,6 +493,18 @@ def build(version, target, size, preset, lan_ip='', docker=False, proxy='none', 
     (dist / 'official-versions.json').write_text(json.dumps(catalog, indent=2) + '\n')
     notes = access_notes(metadata)
     (dist / 'ACCESS.md').write_text(notes, encoding='utf-8')
+    project = Path(__file__).resolve().parents[1]
+    shutil.copy2(project / 'THIRD_PARTY_NOTICES.md', dist / 'THIRD_PARTY_NOTICES.md')
+    shutil.copy2(project / 'docs/PLUGIN-UPDATES.md', dist / 'PLUGIN-UPDATES.md')
+    for license_file in (project / 'licenses').iterdir():
+        shutil.copy2(license_file, dist / ('LICENSE-' + license_file.name))
+    references = (f'# 本次固件来源\n\n- OpenWrt：{version}\n'
+                  f'- 对应源码：https://github.com/openwrt/openwrt/tree/v{version}\n'
+                  f'- 官方构建配置与 feeds 修订：{base}\n'
+                  '- 已安装包及版本：见随附 manifest。完整构建参数见 build-info.json。\n'
+                  '- 插件源码、许可证及源配置：见 THIRD_PARTY_NOTICES.md 和 build-info.json。\n'
+                  '- 这些引用不等于随附了所有包的完整对应源码；对外再分发仍需履行各组件许可要求。\n')
+    (dist / 'SOURCE-REFERENCES.md').write_text(references, encoding='utf-8')
     files = sorted(dist.iterdir())
     (dist / 'SHA256SUMS').write_text(''.join(f'{sha256(p)}  {p.name}\n' for p in files))
     if os.getenv('GITHUB_STEP_SUMMARY'):
