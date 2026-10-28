@@ -1,4 +1,35 @@
-# V2.0 验证记录
+# 验证记录
+
+## V2.1：官网三代版本、中文与登录说明
+
+日期：2026-10-28。
+
+- 31 项单元与失败路径测试通过；actionlint 检查通过。
+- 核对 Firmware Selector 线上 `config.js`：发布数据源指向 `https://downloads.openwrt.org`。每次构建读取其 `.versions.json`，当前解析为 25.12.6、24.10.8、23.05.6，RC/SNAPSHOT 被排除。
+- 实际下载官方 23.05.6 ImageBuilder，哈希为 `1086f40e313369bd04146408e287bb5edb0a02555f3f6030b67c07f33baa8ba9`，与官方清单一致；`.config` 确认为 opkg + firewall4。
+- 新增 LuCI 基础中文、Dockerman 中文、Nikki 中文；OpenClash 检查非空简体中文资源。已根据实际构建根目录修正检查路径，并加入回归测试。
+- IPv4 校验覆盖格式、私网范围、/24 主机地址、Docker 默认网段冲突；GitHub 表单不能实时自定义校验，校验在工作流下载前执行。不能据此判断真实 LAN 是否已有同址设备。
+- [真实发布验收](https://github.com/ZorroZhou/openwrt-firmware-builder/actions/runs/40617675561)：构建和 release 两个任务均成功。
+- [已发布的 25.12.6 standard / 1024 MiB 固件](https://github.com/ZorroZhou/openwrt-firmware-builder/releases/tag/firmware-25.12.6-40617675561-1)：正文和附件 `ACCESS.md` 已实测显示 192.168.1.1、root、初始密码未设置及保留旧配置的说明；11 个项目产物均上传成功（GitHub 另提供两个源码下载链接）。
+- Chrome 扩展已用于触发上述手动工作流，并在已登录页面核对 Release 正文。
+- [三代兼容矩阵](https://github.com/ZorroZhou/openwrt-firmware-builder/actions/runs/40617947610)：8 个组合全部通过构建、四种镜像结构检查和 ext4 BIOS 隔离启动验收；Docker 组合均验证 daemon 能响应，中文包由安装清单检查，OpenClash 还检查其实际中文资源文件。
+
+| 官方解析版本 | 代理 | Docker | 结果 |
+| --- | --- | --- | --- |
+| 25.12.6 | none | 开启 | 通过 |
+| 25.12.6 | OpenClash | 关闭 | 通过 |
+| 25.12.6 | Nikki | 关闭 | 通过 |
+| 24.10.8 | none | 关闭 | 通过 |
+| 24.10.8 | OpenClash | 关闭 | 通过 |
+| 24.10.8 | Nikki | 开启 | 通过 |
+| 23.05.6 | none | 开启 | 通过 |
+| 23.05.6 | OpenClash | 关闭 | 通过 |
+
+23.05/Nikki 因缺少匹配的锁定上游包而提前拒绝，并有对应失败路径测试，不混用 24/25 软件包。三代检测结果均为 fw4/nftables；23/24 为 opkg，25 为 apk。
+
+版本入口覆盖三代，不等于三代都仍受安全维护；23.05 已 EOL。软件源签名、下载哈希和禁用代理默认启动不能保证第三方软件没有漏洞。真实网卡、容器流量、代理订阅与转发仍需隔离实机/虚拟机测试；VM101 未被访问。
+
+## V2.0 历史验证
 
 检查日期：2026-10-28。范围为 x86-64；未访问 VM101。
 
@@ -35,7 +66,7 @@
 - 镜像结构检查覆盖 ext4/squashfs 与 BIOS/EFI 四种组合。
 - 隔离 QEMU 启动检查使用 ext4 BIOS 镜像，检查 LAN IP、网卡、Docker CLI 和 daemon、代理核心执行和代理保持关闭；不修改原始产物。
 - 尚未验证 J4125 真实硬件、物理网卡、容器网络与存储负载、代理订阅和真实流量。需要在独立测试虚拟机中完成这些验收。
-- Release 脚本通过完整性与上传失败路径测试，但尚未进行真实云端试发布。当前 GitHub 连接没有手动触发工作流接口；辅助浏览器未登录，电脑操作工具也因无法可靠识别浏览器网址而停止。首次真实发布可在手动工作流勾选 `publish_release` 完成，结果以对应运行记录为准。
+- V2.0 当时仅完成 Release 失败路径测试；真实试发布已在上面的 V2.1 验收中补齐。
 - 锁文件验证的是上游下载文件的固定哈希。官方清单没有独立 GPG/usign 验签；不承诺官方滚动软件源能长期逐字节复现。
 
 ## 主要失败路径
