@@ -8,7 +8,7 @@
 
 | 参数 | 含义 |
 | --- | --- |
-| version | 官网最新三代的全部正式小版本，直接选择完整版本号；[当前菜单及刷新方法](docs/VERSIONS.md) |
+| version | 官网最新三代的全部正式小版本，直接选择完整版本号；[完整版本清单](docs/VERSIONS.md)，刷新方法见下文 |
 | target | 仅 `x86-64`，对应官方目标 `x86/64` 和 Profile `generic` |
 | rootfs_mb | 256 / 512 / 1024 / 2048 / 4096 MiB；Docker 或代理至少 512 MiB，推荐 1024 以上 |
 | preset | `minimal`=官方基础包；`standard`=基础包追加 LuCI HTTPS、基础简体中文、curl、证书，推荐普通用户选择 |
