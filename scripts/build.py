@@ -91,11 +91,33 @@ def extract(archive, workspace):
         subprocess.run([command, '-dc', str(archive)], stdout=out, check=True)
     dest = workspace / 'extracted'
     dest.mkdir()
+    host_links = []
+    tools = {'ldconfig', 'egrep', 'file', 'grep', 'gzip', 'which', 'bash', 'awk',
+             'getopt', 'rsync', 'python3', 'python', 'diff', 'gcc', 'wget', 'g++',
+             'perl', 'git', 'xxd', 'unzip', 'seq', 'realpath', 'cp', 'stat', 'install'}
+
+    def archive_filter(member, destination):
+        parts = Path(member.name).parts
+        if (member.issym() and member.linkname.startswith('/')
+                and len(parts) == 5 and parts[1:4] == ('staging_dir', 'host', 'bin')
+                and parts[4] in tools):
+            host_links.append(parts[4])
+            return None
+        return tarfile.data_filter(member, destination)
+
     with tarfile.open(unpacked) as bundle:
-        bundle.extractall(dest, filter='data')
+        bundle.extractall(dest, filter=archive_filter)
     roots = list(dest.iterdir())
     if len(roots) != 1 or not (roots[0] / 'Makefile').is_file():
         raise ValueError('ImageBuilder 归档结构不符合预期')
+    for tool in host_links:
+        if tool in ('ldconfig', 'xxd'):
+            target = roots[0] / 'scripts' / ('noop.sh' if tool == 'ldconfig' else 'xxdi.pl')
+        else:
+            target = shutil.which({'awk': 'gawk', 'python': 'python3'}.get(tool, tool))
+        if not target:
+            raise ValueError(f'缺少宿主工具：{tool}')
+        (roots[0] / 'staging_dir/host/bin' / tool).symlink_to(Path(target).resolve())
     unpacked.unlink()
     return roots[0]
 
@@ -207,3 +229,4 @@ if __name__ == '__main__':
     except Exception as exc:
         print(f'构建失败：{exc}', file=sys.stderr)
         sys.exit(1)
+
