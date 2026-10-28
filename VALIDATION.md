@@ -15,14 +15,27 @@
 
 配置为 standard / 512 MiB / 管理 IP 192.168.77.1 / 额外 htop。覆盖两版本与 none、OpenClash、Nikki；25.12 none 和 24.10 Nikki 同时开启 Docker。
 
-[功能构建运行](https://github.com/ZorroZhou/openwrt-firmware-builder/actions/runs/40612055156)：六种组合均成功，包含两种包管理器的第三方包安装及 Docker 构建。隔离启动检查的最终结果以对应 Actions 运行记录为准，不将排队、运行中或单元测试通过解释为启动验收通过。
+[功能构建运行](https://github.com/ZorroZhou/openwrt-firmware-builder/actions/runs/40612055156)：六种组合均成功，包含两种包管理器的第三方包安装及 Docker 构建。
+
+[最终构建与启动验收](https://github.com/ZorroZhou/openwrt-firmware-builder/actions/runs/40614536075)：六项任务全部成功，每项生成四种镜像并检查结构，再以 ext4 BIOS 镜像启动隔离 QEMU。
+
+| 版本 | 代理 | Docker | 构建与启动 |
+| --- | --- | --- | --- |
+| 24.10.6 | none | 关闭 | 通过 |
+| 24.10.6 | OpenClash | 关闭 | 通过 |
+| 24.10.6 | Nikki | 开启 | 通过，Docker daemon 正常响应 |
+| 25.12.6 | none | 开启 | 通过，Docker daemon 正常响应 |
+| 25.12.6 | OpenClash | 关闭 | 通过 |
+| 25.12.6 | Nikki | 关闭 | 通过 |
+
+六项均确认管理 IP 为 192.168.77.1；代理组合确认核心可执行且未启用代理服务。Docker 组合执行 `docker info` 检查服务响应。启动测试兼容 fwtool 尾部元数据，等待首次配置完成，并用短行脚本避免 BusyBox 控制台截断命令。
 
 ## 检查边界
 
 - 镜像结构检查覆盖 ext4/squashfs 与 BIOS/EFI 四种组合。
 - 隔离 QEMU 启动检查使用 ext4 BIOS 镜像，检查 LAN IP、网卡、Docker CLI 和 daemon、代理核心执行和代理保持关闭；不修改原始产物。
 - 尚未验证 J4125 真实硬件、物理网卡、容器网络与存储负载、代理订阅和真实流量。需要在独立测试虚拟机中完成这些验收。
-- Release 脚本通过完整性与上传失败路径测试；真实发布结果以手动工作流中勾选发布后产生的运行记录为准。
+- Release 脚本通过完整性与上传失败路径测试，但尚未进行真实云端试发布。当前 GitHub 连接没有手动触发工作流接口；辅助浏览器未登录，电脑操作工具也因无法可靠识别浏览器网址而停止。首次真实发布可在手动工作流勾选 `publish_release` 完成，结果以对应运行记录为准。
 - 锁文件验证的是上游下载文件的固定哈希。官方清单没有独立 GPG/usign 验签；不承诺官方滚动软件源能长期逐字节复现。
 
 ## 主要失败路径

@@ -1,5 +1,6 @@
 /work/
 /dist/
 /build.log
+/smoke.log
 __pycache__/
 *.pyc
