@@ -80,3 +80,5 @@ Artifacts 保留 14 天，CI 产物保留 7 天。内容包含镜像、manifest�
 在项目根目录运行 `python3 -m unittest discover -s tests -v`。需要 Python 3.12+ 和 Linux x86-64 构建宿主。设备及功能匹配在 scripts/devices.py，设备目录导出在 scripts/discover_devices.py，其余入口见 scripts/ 和 .github/workflows/。证据与限制见 [VALIDATION.md](VALIDATION.md)。
 
 第三方版权和许可见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) 与 licenses/。自写脚本暂未指定许可证，来源引用不是完整对应源码归档。当前公开说明使用通用环境描述；旧提交及既有标签可能保留历史内容，本轮不重写 Git 历史。
+
+可选 iStore 软件中心来自 [istoreos/istore](https://github.com/istoreos/istore)，版权归易有云团队及贡献者，采用 [MIT License](https://github.com/istoreos/istore/blob/main/LICENSE)。本项目集成的是 iStore 组件，并非 iStoreOS；商店应用及依赖各自的许可仍分别适用。选择 iStore 构建时，会随固件和附件保留上游完整版权与许可文本，实际版本及来源见 build-info.json 和 manifest。

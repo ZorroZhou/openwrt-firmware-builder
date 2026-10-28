@@ -13,6 +13,7 @@
 | Mihomo | MetaCubeX 及其贡献者 | OpenClash/Nikki 选择对应核心时包含 | [源码](https://github.com/MetaCubeX/mihomo)、[GPLv3 许可证](https://github.com/MetaCubeX/mihomo/blob/v1.19.33/LICENSE)；实际核心版本见 manifest/build-info |
 | Nikki / LuCI 管理界面与翻译 | nikkinikki-org、Joseph Mory 及其贡献者 | 选择 Nikki 时从上游签名源安装 | [源码](https://github.com/nikkinikki-org/OpenWrt-nikki)、[LICENSE](https://github.com/nikkinikki-org/OpenWrt-nikki/blob/main/LICENSE)、[推荐软件源方式](https://github.com/nikkinikki-org/OpenWrt-nikki/blob/main/README.zh.md)；仓库提供 GPLv3 文本，包声明以对应源码/元数据为准 |
 | Docker / Moby / containerd / runc / Dockerman | 各上游项目及贡献者 | 选择 Docker 时通过官方 OpenWrt 软件源安装 | [Moby](https://github.com/moby/moby)、[containerd](https://github.com/containerd/containerd)、[runc](https://github.com/opencontainers/runc)、[Dockerman](https://github.com/lisaac/luci-app-dockerman)；各组件许可证分别适用 |
+| iStore 软件中心 | 易有云团队及贡献者 | 选择 iStore 时安装软件中心及相应依赖；不是 iStoreOS 系统 | [上游源码与使用说明](https://github.com/istoreos/istore)、[MIT License](https://github.com/istoreos/istore/blob/main/LICENSE)，原文版权声明为 `Copyright (c) 2021 易有云团队`；依赖及商店应用分别适用各自许可证 |
 | GitHub Actions | GitHub 及各 Action 作者 | 云端调度、下载与产物上传 | [actions/checkout](https://github.com/actions/checkout)、[upload-artifact](https://github.com/actions/upload-artifact)、[download-artifact](https://github.com/actions/download-artifact)；仅用于构建流程 |
 | ImmortalWrt-ImageBuilder 交互设计参考 | wukongdaily 及其贡献者 | 本项目最初需求中的 Actions 参数交互参考 | [上游项目](https://github.com/wukongdaily/ImmortalWrt-ImageBuilder)；其代码及资源遵循原仓库条款 |
 
@@ -22,7 +23,7 @@
 
 ## 保留许可与取得源码
 
-V3.0 新增可选 iStore，来源为 [istoreos/istore](https://github.com/istoreos/istore)，作者 LinkEase 团队及贡献者，仓库采用 [MIT](https://github.com/istoreos/istore/blob/main/LICENSE)。它是软件中心组件，不是将系统替换为 iStoreOS。仅选择该功能时使用作者 APK 签名源；实际源码修订、源地址和许可证哈希记录在 build-info.json，相应修订许可证原文保存在固件与附件的 istore-current-LICENSE.txt。依赖与后续安装的应用继续适用各自许可证，不由 iStore 的 MIT 统一覆盖。
+V3.0 新增可选 iStore，来源为 [istoreos/istore](https://github.com/istoreos/istore)，作者易有云团队及贡献者，仓库采用 [MIT](https://github.com/istoreos/istore/blob/main/LICENSE)。它是软件中心组件，不是将系统替换为 iStoreOS。仅选择该功能时使用作者 APK 签名源；实际源码修订、源地址和许可证哈希记录在 build-info.json，相应修订的完整版权及许可证原文保存在固件 `/usr/share/firmware-builder/licenses/istore-current-LICENSE.txt`，以及构建/Release 附件 `LICENSE-istore-current-LICENSE.txt`。依赖与后续安装的应用继续适用各自许可证，不由 iStore 的 MIT 统一覆盖。
 
 主要许可文本保存在 `licenses/`。固件中也保留于 `/usr/share/firmware-builder/`，构建 Artifact 会随附这些文本、此说明及 `SOURCE-REFERENCES.md`。不删除上游软件自身附带的版权和许可证声明。
 
@@ -40,6 +41,7 @@ V3.0 新增可选 iStore，来源为 [istoreos/istore](https://github.com/istore
 ## 安装与更新来源
 
 - OpenWrt 基础包：当前版本的 OpenWrt 官方软件源，保留其签名检查。
+- iStore：按已验证的兼容范围使用作者 `https://istore.istoreos.com/repo-apk/` 签名源，保留源、公钥与原始许可声明；这不是 OpenWrt 官方软件源。本项目与 iStore/iStoreOS 上游无官方隶属或背书关系。
 - Nikki：插件作者提供的 `https://nikkinikki.pages.dev` 签名源，按 OpenWrt 分支与 `x86_64` 架构选择，并随固件保留上游源、公钥。它是 Nikki 上游源，不是 OpenWrt 官方软件源。公钥哈希和文档修订记录在 `configs/plugins.lock.json` / `build-info.json`。
 - OpenClash：按作者的 Release 分发方式安装最新正式版本，并保留其内置更新机制；不添加未经作者确认的软件源。Mihomo 核心按实际选择记录来源和版本。
 
