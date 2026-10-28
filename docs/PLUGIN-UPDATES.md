@@ -37,7 +37,7 @@ apk upgrade mihomo-meta nikki luci-app-nikki luci-i18n-nikki-zh-cn
 
 ## OpenClash
 
-OpenClash 按 [作者发布页](https://github.com/vernesong/OpenClash/releases) 的 IPK/APK 包分发方式安装，初始版本和下载哈希保存在锁文件中。Mihomo 核心来源也单独记录。
+OpenClash 每次构建查询 [作者最新正式发布](https://github.com/vernesong/OpenClash/releases/latest)，按当前包管理器选择 IPK/APK。Mihomo 同样取最新正式发布中的通用 amd64-v1 核心。解析后的固定 URL、标签及上游资产 SHA256 记录在 build-info.json；缺少匹配资产或校验值时失败，不降级到旧版。Nikki 仍使用对应分支源的最新可用组件，不强行替换核心。
 
 运行后可使用 OpenClash 自带的插件/核心更新机制，按作者说明操作。本项目不为它添加未经上游确认的软件源，也不把它描述为已从 OpenWrt 官方源安装。更新软件、核心或规则数据前，先备份配置，并遵守这些组件各自的许可证。
 

@@ -67,13 +67,11 @@ class FeatureTests(unittest.TestCase):
             p = b.write_defaults(Path(tmp), '', 'none')
             self.assertNotIn('network.', p.read_text())
 
-    def test_lock_entries_are_pinned_and_well_formed(self):
+    def test_upstream_policy_and_trust_keys_are_well_formed(self):
         lock = json.loads((Path(__file__).resolve().parents[1] / 'configs/plugins.lock.json').read_text())
-        entries = list(lock['openclash'].values())
-        for entry in entries:
-            self.assertIn('/releases/download/v', entry['url'])
-            self.assertNotIn('/latest/', entry['url'])
-            self.assertRegex(entry['sha256'], r'^[0-9a-f]{64}$')
+        self.assertEqual(lock['openclash']['version_policy'], 'latest-stable')
+        self.assertEqual(lock['openclash']['repository'], 'vernesong/OpenClash')
+        self.assertEqual(lock['openclash']['core_repository'], 'MetaCubeX/mihomo')
         for entry in lock['nikki']['keys'].values():
             self.assertTrue(entry['url'].startswith('https://nikkinikki.pages.dev/'))
             self.assertRegex(entry['sha256'], r'^[0-9a-f]{64}$')

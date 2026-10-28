@@ -315,6 +315,54 @@ def fetch_locked(entry, workspace):
     return path
 
 
+def latest_release_asset(repository, pattern):
+    if repository not in ('vernesong/OpenClash', 'MetaCubeX/mihomo'):
+        raise ValueError('不允许的插件上游仓库')
+    api = f'https://api.github.com/repos/{repository}/releases/latest'
+    request = urllib.request.Request(api, headers={'Accept': 'application/vnd.github+json',
+                                                 'User-Agent': 'OpenWrt-Firmware-Builder'})
+    with urllib.request.urlopen(request, timeout=60) as response:
+        if response.url != api:
+            raise ValueError('插件版本 API 重定向到非预期地址')
+        release = json.load(response)
+    tag = release.get('tag_name', '')
+    if (release.get('draft') is not False or release.get('prerelease') is not False
+            or not re.fullmatch(r'v[0-9]+(?:\.[0-9]+)+', tag)):
+        raise ValueError('上游 latest 不是可识别的正式版本')
+    assets = [a for a in release.get('assets', []) if re.fullmatch(pattern, a.get('name', ''))]
+    if len(assets) != 1:
+        raise ValueError(f'{repository} {tag} 缺少唯一兼容资产；不回退旧版或使用其他架构')
+    asset = assets[0]
+    if repository == 'vernesong/OpenClash':
+        expected = (f'luci-app-openclash-{tag[1:]}.apk' if asset['name'].endswith('.apk')
+                    else f'luci-app-openclash_{tag[1:]}_all.ipk')
+    else:
+        expected = f'mihomo-linux-amd64-v1-{tag}.gz'
+    if asset['name'] != expected:
+        raise ValueError('上游资产文件名与正式版本标签不一致')
+    digest = asset.get('digest') or ''
+    if not re.fullmatch(r'sha256:[0-9a-f]{64}', digest):
+        raise ValueError('上游资产未提供 SHA256；停止下载，不跳过校验')
+    url = asset.get('browser_download_url')
+    if url != f"https://github.com/{repository}/releases/download/{tag}/{asset['name']}":
+        raise ValueError('插件资产地址不符合上游仓库与版本')
+    return dict(url=url, sha256=digest[7:], release=tag, repository=repository,
+                version_policy='latest-stable', release_api=api,
+                source_url=f'https://github.com/{repository}/tree/{tag}')
+
+
+def preserve_current_license(entry, workspace, overlay):
+    repository, tag = entry['repository'], entry['release']
+    name = repository.split('/')[-1] + '-current-LICENSE.txt'
+    path = workspace / name
+    url = f'https://raw.githubusercontent.com/{repository}/{tag}/LICENSE'
+    download(url, path, allowed_hosts={'raw.githubusercontent.com'})
+    if not path.stat().st_size:
+        raise ValueError('上游许可证文件为空')
+    shutil.copy2(path, overlay / 'usr/share/firmware-builder/licenses' / name)
+    entry['license'] = dict(url=url, sha256=sha256(path))
+
+
 def prepare_plugin(builder, workspace, overlay, version, proxy, manager):
     if proxy == 'none':
         return []
@@ -322,25 +370,31 @@ def prepare_plugin(builder, workspace, overlay, version, proxy, manager):
     if proxy == 'nikki':
         return prepare_nikki_feed(builder, workspace, overlay, version, manager, lock['nikki'])
     records, packages = [], []
-    suffix = '.apk' if manager == 'apk' else '.ipk'
     if proxy == 'openclash':
-        entry = lock[proxy][suffix[1:]]
+        entry = latest_release_asset(lock[proxy]['repository'],
+                  r'luci-app-openclash-[0-9.]+\.apk' if manager == 'apk'
+                  else r'luci-app-openclash_[0-9.]+_all\.ipk')
         packages.append(fetch_locked(entry, workspace))
+        preserve_current_license(entry, workspace, overlay)
         records.append(entry)
-        core_entry = lock[proxy]['core']
+        core_entry = latest_release_asset(lock[proxy]['core_repository'],
+                                         r'mihomo-linux-amd64-v1-v[0-9.]+\.gz')
         core_archive = fetch_locked(core_entry, workspace)
+        preserve_current_license(core_entry, workspace, overlay)
         core = overlay / 'etc/openclash/core/clash_meta'
         core.parent.mkdir(parents=True)
         with gzip.open(core_archive, 'rb') as source, core.open('wb') as dest:
             shutil.copyfileobj(source, dest)
-        if core.read_bytes()[:4] != b'\x7fELF':
-            raise ValueError('OpenClash 核心不是 ELF 可执行文件')
+        header = core.read_bytes()[:20]
+        if (len(header) != 20 or header[:6] != b'\x7fELF\x02\x01'
+                or struct.unpack_from('<H', header, 18)[0] != 62):
+            raise ValueError('OpenClash 核心不是 x86-64 ELF 可执行文件')
         core.chmod(0o755)
         records.append(core_entry)
     for package in packages:
         shutil.copy2(package, builder / 'packages' / package.name)
     if manager == 'apk':
-        # Authenticate pinned downloads first, then sign only these local packages.
+        # Verify resolved upstream asset digests before signing local packages.
         # Official repository signature checking remains enabled.
         run(['make', '_check_keys'], builder)
         apk = builder / 'staging_dir/host/bin/apk'
@@ -381,6 +435,7 @@ def prepare_nikki_feed(builder, workspace, overlay, version, manager, feed):
     with builder_repo.open('a') as repository:
         repository.write('\n# Nikki upstream signed repository\n' + source)
     return [dict(provider='nikkinikki-org/OpenWrt-nikki', installation='signed-upstream-feed',
+                 version_policy='latest-compatible-feed',
                  feed_url=url, key=key_info, source_ref=feed['source_ref'],
                  documentation=feed['documentation'])]
 
@@ -424,6 +479,8 @@ def access_notes(info):
             f"- 简体中文：{'LuCI 及所选管理插件中文资源已包含' if info['luci'] else '无网页界面，不追加 LuCI 语言包'}\n"
             f"- Docker：{'已预装' if info['docker'] else '未选择'}\n"
             f"- 代理：{info['proxy']}（如已选择，首次启动保持关闭，导入自己的配置后再启用）\n\n"
+            + ''.join(f'- 代理组件版本：{name} = {value}\n'
+                      for name, value in sorted(info.get('proxy_versions', {}).items())) + '\n'
             '先在隔离虚拟机验收。不要与现有路由器在同一网段同时提供 DHCP。\n')
 
 
@@ -482,10 +539,23 @@ def build(version, target, size, preset, lan_ip='', docker=False, proxy='none', 
     dist.mkdir()
     for path in images + manifests:
         shutil.copy2(path, dist / path.name)
-    metadata = dict(builder_version='2.2.0', version=version, version_requested=requested,
+    proxy_names = {'luci-app-openclash', 'nikki', 'luci-app-nikki', 'mihomo-meta', 'luci-i18n-nikki-zh-cn'}
+    proxy_versions = {}
+    if proxy != 'none':
+        for manifest in manifests:
+            for line in manifest.read_text().splitlines():
+                fields = line.split()
+                if len(fields) == 3 and fields[1] == '-' and fields[0] in proxy_names:
+                    proxy_versions[fields[0]] = fields[2]
+        if not proxy_versions:
+            raise ValueError('无法记录代理插件实际安装版本')
+        if proxy == 'openclash':
+            proxy_versions['mihomo-core'] = plugins[1]['release']
+    metadata = dict(builder_version='2.3.0', version=version, version_requested=requested,
                     version_source=VERSION_SOURCE, target=target, profile='generic', rootfs_mib=size,
                     preset=preset, packages=packages, lan_ip=lan_ip, username='root', password_state='unset',
                     luci=('luci-ssl' in installed), docker=docker, proxy=proxy, plugins=plugins,
+                    proxy_versions=proxy_versions,
                     package_manager=manager, firewall=firewall,
                     imagebuilder_url=base + name, imagebuilder_sha256=digest,
                     github_sha=os.getenv('GITHUB_SHA'), run_id=os.getenv('GITHUB_RUN_ID'))
@@ -498,7 +568,7 @@ def build(version, target, size, preset, lan_ip='', docker=False, proxy='none', 
     project = Path(__file__).resolve().parents[1]
     shutil.copy2(project / 'THIRD_PARTY_NOTICES.md', dist / 'THIRD_PARTY_NOTICES.md')
     shutil.copy2(project / 'docs/PLUGIN-UPDATES.md', dist / 'PLUGIN-UPDATES.md')
-    for license_file in (project / 'licenses').iterdir():
+    for license_file in (overlay / 'usr/share/firmware-builder/licenses').iterdir():
         shutil.copy2(license_file, dist / ('LICENSE-' + license_file.name))
     references = (f'# 本次固件来源\n\n- OpenWrt：{version}\n'
                   f'- 对应源码：https://github.com/openwrt/openwrt/tree/v{version}\n'

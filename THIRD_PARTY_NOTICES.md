@@ -18,6 +18,8 @@
 
 表格不是固件所有软件包的穷尽清单。实际包含哪些包及版本，以随附 `.manifest` 为准；OpenClash 的 MIT 许可不覆盖其调用的 GPL 核心、其他面板或第三方数据集。
 
+表中固定标签和 `licenses/` 的文本保留初始参考来源。V2.3 起 OpenClash/Mihomo 每次构建解析最新正式标签，实际源码入口、许可证 URL 与哈希见 build-info.json；相应标签的原文同时保存在固件和附件的 `OpenClash-current-LICENSE.txt`、`mihomo-current-LICENSE.txt`（附件名前另加 `LICENSE-`）。当前上游条款与初始参考不一致时，以实际组件适用的上游条款为准，不能把旧快照当作新版本的授权。
+
 ## 保留许可与取得源码
 
 主要许可文本保存在 `licenses/`。固件中也保留于 `/usr/share/firmware-builder/`，构建 Artifact 会随附这些文本、此说明及 `SOURCE-REFERENCES.md`。不删除上游软件自身附带的版权和许可证声明。
@@ -37,6 +39,6 @@
 
 - OpenWrt 基础包：当前版本的 OpenWrt 官方软件源，保留其签名检查。
 - Nikki：插件作者提供的 `https://nikkinikki.pages.dev` 签名源，按 OpenWrt 分支与 `x86_64` 架构选择，并随固件保留上游源、公钥。它是 Nikki 上游源，不是 OpenWrt 官方软件源。公钥哈希和文档修订记录在 `configs/plugins.lock.json` / `build-info.json`。
-- OpenClash：按作者的 Release 分发方式安装锁定版本，并保留其内置更新机制；不添加未经作者确认的软件源。Mihomo 核心按实际选择记录来源和版本。
+- OpenClash：按作者的 Release 分发方式安装最新正式版本，并保留其内置更新机制；不添加未经作者确认的软件源。Mihomo 核心按实际选择记录来源和版本。
 
 本项目只生成配置、拼装固件和提供检验流程，不接收或再分发用户的私人订阅与凭据。

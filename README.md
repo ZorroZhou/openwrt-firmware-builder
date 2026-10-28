@@ -1,6 +1,6 @@
-# OpenWrt Firmware Builder V2.2
+# OpenWrt Firmware Builder V2.3
 
-在 GitHub Actions 中选择版本、分区、管理 IP、Docker 和代理插件，使用**官方 OpenWrt ImageBuilder**组装 x86-64 固件。保留官方内核及软件源；Nikki 使用作者签名软件源，OpenClash 使用固定上游 Release。平台暂只支持 x86-64。
+在 GitHub Actions 中选择版本、分区、管理 IP、Docker 和代理插件，使用**官方 OpenWrt ImageBuilder**组装 x86-64 固件。保留官方内核及软件源；每次构建获取兼容来源的最新代理组件。平台暂只支持 x86-64。
 
 ## 使用方法
 
@@ -60,19 +60,23 @@ GitHub 原生下拉菜单不能打开时请求官网。菜单由 `scripts/sync_v
 
 ## 第三方插件来源与升级
 
-`configs/plugins.lock.json` 保存 OpenClash 固定下载及 Nikki 作者源、公钥哈希和安装文档修订。构建不执行第三方在线安装脚本，不混用 IPK 和 APK。具体安装方式与升级说明见 [PLUGIN-UPDATES.md](docs/PLUGIN-UPDATES.md)。
+`configs/plugins.lock.json` 保存上游来源策略，以及 Nikki 作者源、公钥哈希和安装文档修订。每次构建独立查询当前版本，不复用上次构建的插件包，也不执行第三方在线安装脚本。具体安装方式与升级说明见 [PLUGIN-UPDATES.md](docs/PLUGIN-UPDATES.md)。
 
-| 组件 | 锁定版本 | 来源 |
+| 组件 | 每次构建的版本策略 | 来源 |
 | --- | --- | --- |
-| OpenClash | v0.48.002 | [vernesong/OpenClash](https://github.com/vernesong/OpenClash/releases/tag/v0.48.002) |
-| OpenClash Mihomo 核心 | v1.19.33，amd64-v1 | [MetaCubeX/mihomo](https://github.com/MetaCubeX/mihomo/releases/tag/v1.19.33) |
+| OpenClash | 上游最新正式 Release，按包管理器选 IPK/APK | [vernesong/OpenClash](https://github.com/vernesong/OpenClash/releases/latest) |
+| OpenClash Mihomo 核心 | 上游最新正式 Release，选择通用 amd64-v1 | [MetaCubeX/mihomo](https://github.com/MetaCubeX/mihomo/releases/latest) |
 | Nikki（含 mihomo-meta） | 作者签名软件源的兼容版本，实际包版本记录于 manifest | [作者推荐安装方法](https://github.com/nikkinikki-org/OpenWrt-nikki/blob/main/README.zh.md) |
 
 Nikki 按作者 `feed.sh` 的方法配置签名软件源：24.10 使用 opkg，25.12 使用 apk；公钥哈希先校验，再由 ImageBuilder 验证软件源签名。源地址与公钥保留在固件中，后续可按作者文档升级。它是 Nikki 作者维护的第三方源，不是 OpenWrt 官方源；该源滚动更新，实际安装版本以 manifest 为准。
 
-OpenClash 使用作者 Release：IPK 放入 ImageBuilder 本地包目录；APK 在固定哈希验证通过后用临时本地密钥签名。官方源签名检查保持启用，私钥不会加入固件或产物。OpenClash 后续使用自身更新入口，不宣称有与 Nikki 相同的升级源。
+OpenClash 通过 GitHub `releases/latest` API 获取最新正式版本（不接受草稿、预发布或测试核心），先解析成确切版本的下载 URL 和上游资产 SHA256，再下载验证。缺少对应包格式、通用 amd64-v1 核心或上游 SHA256 时直接失败，不回退旧版、不替换其他架构。IPK 放入本地包目录；APK 验证上游哈希后用临时密钥签名。官方源签名检查保持启用，私钥不会加入固件或产物。相应标签的许可证原文一并下载保留。
 
-构建记录保存锁定下载信息、参数、额外包和源码提交，但官方软件源会变化，因此不能承诺不同日期构建得到逐字节相同的固件。
+软件包依赖由所选官方 ImageBuilder 检查，缺依赖或冲突会失败。这不能保证未来任意上游版本都兼容，构建检查也不替代实际代理流量测试。Nikki 使用分支软件源的最新可用兼容包，其核心可能比 Mihomo GitHub 最新版稍晚；不强行混装 OpenClash 的核心。版本在构建开始时解析，构建过程中上游再发布新版不会改变本次已选资产。
+
+`build-info.json` 的 `proxy_versions`、`.manifest`、`ACCESS.md`、运行摘要与 Release 正文显示实际安装版本。仅重试 Release 上传任务不会重新安装插件；需要新版本时重新运行完整 Build OpenWrt。
+
+构建记录保存本次解析出的下载 URL、版本、哈希、参数和源码提交。每次获取最新版本，因此不同日期不保证产物相同；API 限流、源不可用或校验失败时明确终止。
 
 ## 验证和发布
 
