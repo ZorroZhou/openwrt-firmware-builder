@@ -5,9 +5,10 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: '官方完整版本号（支持 24.10.x / 25.12.x，须实际存在）'
-        type: string
+        description: '官方 OpenWrt 版本（已核实的发布版本）'
+        type: choice
         required: true
+        options: ['25.12.6', '24.10.6']
         default: '25.12.6'
       target:
         description: 目标平台

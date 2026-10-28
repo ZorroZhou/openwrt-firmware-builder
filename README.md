@@ -11,7 +11,7 @@
 
 | 参数 | 取值与含义 |
 | --- | --- |
-| version | 完整官方稳定版本号，默认 `25.12.6`；接受 `24.10.N` / `25.12.N`，不接受系列号、RC、snapshot 或下载 URL |
+| version | 下拉选择 `25.12.6` / `24.10.6`，默认 `25.12.6`；仅列出已核实存在的官方发布版本 |
 | target | 仅 `x86-64`，内部目标 `x86/64`、设备 Profile `generic` |
 | rootfs_mb | 256 / 512 / 1024 / 2048 / 4096 MiB；设置根分区，整盘镜像还包含引导分区和对齐空间 |
 | preset | `minimal`：官方设备默认软件包；`standard`：默认软件包加 `luci-ssl curl ca-bundle` |
@@ -19,6 +19,8 @@
 minimal 不主动裁剪官方默认包，不保证包含 LuCI。standard 提供 LuCI HTTPS 管理界面。预设不加入 Docker、OpenClash、Nikki、自定义 IP 或第三方源。系统初始设置遵循官方默认配置，首次使用应在隔离虚拟机中完成密码和网络设置。
 
 ## 版本、下载与包管理器
+
+版本下拉列表是工作流中维护的固定列表，不会自动获取最新版本。增加选项前，先确认该版本官方 x86/64 ImageBuilder 存在且兼容，再更新 `.github/workflows/build.yml` 中的 `version.options`。构建脚本仍校验完整版本号及官方文件，不会因为版本列在菜单中就跳过下载检查。
 
 截至 2026-10-28，已核对以下官方目录及 ImageBuilder 文件存在：
 
