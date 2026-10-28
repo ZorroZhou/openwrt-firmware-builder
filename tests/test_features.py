@@ -1,4 +1,5 @@
 import hashlib
+import gzip
 import importlib.util
 import json
 import os
@@ -98,10 +99,22 @@ class FeatureTests(unittest.TestCase):
     def test_boot_test_checks_requested_features(self):
         commands = smoke.guest_checks(dict(lan_ip='192.168.77.1', docker=True, proxy='nikki'))
         self.assertIn('docker --version', commands)
+        self.assertIn('docker info', commands)
         self.assertIn('mihomo -v', commands)
         self.assertNotIn('FWB_OK', commands)  # Prevent false success from terminal echo.
         with self.assertRaises(ValueError):
             smoke.guest_checks(dict(lan_ip='$(id)', docker=False, proxy='none'))
+
+    def test_boot_image_inflate_accepts_openwrt_metadata(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source, raw = Path(tmp) / 'image.gz', Path(tmp) / 'image.raw'
+            payload = b'firmware' * 300000
+            source.write_bytes(gzip.compress(payload) + b'fwtool-trailer')
+            smoke.inflate_image(source, raw)
+            self.assertEqual(raw.read_bytes(), payload)
+            source.write_bytes(gzip.compress(payload)[:-4])
+            with self.assertRaises(ValueError):
+                smoke.inflate_image(source, raw)
 
 
 class ReleaseTests(unittest.TestCase):

@@ -71,11 +71,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Validate inputs and run regression tests
-        env:
-          OPENWRT_VERSION: ${{ inputs.version }}
-          OPENWRT_TARGET: ${{ inputs.target }}
-          ROOTFS_MB: ${{ inputs.rootfs_mb }}
-          PRESET: ${{ inputs.preset }}
         run: |
           python3 -m unittest discover -s tests -v
           python3 scripts/build.py --validate-only
@@ -84,11 +79,6 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends build-essential libncurses-dev zlib1g-dev gawk git gettext libssl-dev xsltproc rsync unzip file wget curl python3 zstd xz-utils
       - name: Download, verify and build
-        env:
-          OPENWRT_VERSION: ${{ inputs.version }}
-          OPENWRT_TARGET: ${{ inputs.target }}
-          ROOTFS_MB: ${{ inputs.rootfs_mb }}
-          PRESET: ${{ inputs.preset }}
         run: python3 -u scripts/build.py 2>&1 | tee build.log
       - name: Upload verified firmware
         id: firmware

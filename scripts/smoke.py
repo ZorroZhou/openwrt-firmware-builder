@@ -1,14 +1,25 @@
 """Boot an ext4 BIOS image in an isolated, disposable QEMU snapshot (Linux CI)."""
-import gzip
 import json
 import os
 from pathlib import Path
 import re
 import selectors
-import shutil
 import subprocess
 import sys
 import time
+import zlib
+
+
+def inflate_image(image, raw):
+    decoder = zlib.decompressobj(16 + zlib.MAX_WBITS)
+    with image.open('rb') as source, raw.open('wb') as dest:
+        while chunk := source.read(64 * 1024):
+            while chunk:
+                dest.write(decoder.decompress(chunk, 1024 * 1024))
+                if decoder.eof:
+                    return  # Ignore the OpenWrt fwtool trailer, after verifying gzip CRC.
+                chunk = decoder.unconsumed_tail
+    raise ValueError('Incomplete gzip image')
 
 
 def guest_checks(info):
@@ -19,7 +30,10 @@ def guest_checks(info):
             raise ValueError('Invalid test IP')
         checks.append(f'test "$(uci -q get network.lan.ipaddr)" = "{ip}"')
     if info['docker']:
-        checks += ['docker --version', 'test -x /etc/init.d/dockerd']
+        checks += ['docker --version', 'test -x /etc/init.d/dockerd',
+                   '/etc/init.d/dockerd start',
+                   '(i=0; until docker info >/dev/null 2>&1; do i=$((i+1)); '
+                   '[ "$i" -lt 30 ] || exit 1; sleep 2; done)']
     proxy = info['proxy']
     if proxy == 'openclash':
         checks += ['/etc/openclash/core/clash_meta -v',
@@ -39,8 +53,7 @@ def smoke(directory):
     info = json.loads((directory / 'build-info.json').read_text())
     image = directory / f"openwrt-{info['version']}-x86-64-generic-ext4-combined.img.gz"
     raw = Path('work/smoke.img')
-    with gzip.open(image, 'rb') as source, raw.open('wb') as dest:
-        shutil.copyfileobj(source, dest)
+    inflate_image(image, raw)
     command = ['qemu-system-x86_64', '-m', '768', '-smp', '2', '-nographic', '-no-reboot',
                '-drive', f'file={raw.resolve()},format=raw,if=virtio', '-snapshot',
                '-nic', 'user,model=virtio-net-pci,restrict=on',

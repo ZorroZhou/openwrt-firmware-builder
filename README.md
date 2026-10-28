@@ -72,7 +72,7 @@ IPK 放入 ImageBuilder 本地包目录。APK 在上游文件哈希验证通过�
 
 解压下载的 Artifact 后，Linux 下执行 `sha256sum -c SHA256SUMS`。
 
-`Verify firmware builds` 在相关代码推送或 PR 时，检查两条版本线与三种代理选项；其中部分组合同时开启 Docker，并注入测试管理 IP 和额外软件包。CI 使用隔离 QEMU 快照启动 ext4 BIOS 镜像，检查 LAN IP、网卡、选定核心和服务关闭状态；测试日志及产物保留 7 天。EFI/squashfs 通过结构检查，尚不等于四种镜像都经过实际启动。
+`Verify firmware builds` 在相关代码推送或 PR 时，检查两条版本线与三种代理选项；其中部分组合同时开启 Docker，并注入测试管理 IP 和额外软件包。CI 使用隔离 QEMU 快照启动 ext4 BIOS 镜像，检查 LAN IP、网卡、选定核心和服务关闭状态；Docker 组合还会启动 daemon 并等待 `docker info` 成功。测试日志及产物保留 7 天。EFI/squashfs 通过结构检查，尚不等于四种镜像都经过实际启动。
 
 可选 Release 使用单独的发布任务，只有此任务获得仓库写权限。下载本次构建 Artifact 后重新核对文件清单和 SHA256，先建立草稿，全部资产上传成功才公开。标签包含 OpenWrt 版本、运行编号和重试次数，不覆盖旧 Release；发布失败会保留草稿供诊断，Artifact 仍可下载。不需要额外 PAT。
 
