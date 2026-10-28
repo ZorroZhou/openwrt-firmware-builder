@@ -99,7 +99,9 @@ def detect_runtime(config):
 def download(url, dest, github=False, allowed_hosts=None):
     for attempt in range(3):
         try:
-            with urllib.request.urlopen(url, timeout=120) as response, dest.open('wb') as out:
+            request = urllib.request.Request(url, headers={
+                'User-Agent': 'OpenWrt-Firmware-Builder/2.2 (+https://github.com/ZorroZhou/openwrt-firmware-builder)'})
+            with urllib.request.urlopen(request, timeout=120) as response, dest.open('wb') as out:
                 allowed = allowed_hosts or ({'github.com', 'release-assets.githubusercontent.com',
                             'objects.githubusercontent.com'} if github else {'downloads.openwrt.org'})
                 parsed = urlparse(response.url)
@@ -109,7 +111,7 @@ def download(url, dest, github=False, allowed_hosts=None):
             return
         except urllib.error.HTTPError as exc:
             if exc.code < 500:
-                raise RuntimeError(f'官方文件不可用（HTTP {exc.code}）：{url}') from exc
+                raise RuntimeError(f'下载文件不可用（HTTP {exc.code}）：{url}') from exc
             if attempt == 2:
                 raise
         except (urllib.error.URLError, TimeoutError):
