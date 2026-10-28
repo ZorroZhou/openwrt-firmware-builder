@@ -100,6 +100,7 @@ class FeatureTests(unittest.TestCase):
         commands = smoke.guest_checks(dict(lan_ip='192.168.77.1', docker=True, proxy='nikki'))
         self.assertIn('docker --version', commands)
         self.assertIn('docker info', commands)
+        self.assertIn('until sh -c "$1"', commands)
         self.assertIn('mihomo -v', commands)
         self.assertNotIn('FWB_OK', commands)  # Prevent false success from terminal echo.
         with self.assertRaises(ValueError):

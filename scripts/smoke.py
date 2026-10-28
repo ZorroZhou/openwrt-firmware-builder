@@ -45,7 +45,11 @@ def guest_checks(info):
     if proxy != 'none':
         checks.append(f'! /etc/init.d/{proxy} enabled')
     # Encode markers so the terminal's echoed command cannot be mistaken for success.
-    return (' && '.join(checks) + " && printf '\\106\\127\\102\\137\\117\\113\\012'"
+    wait = ('wait_check() { i=0; until sh -c "$1"; do i=$((i+1)); '
+            '[ "$i" -lt 45 ] || { echo "CHECK_FAILED: $1"; return 1; }; sleep 2; done; }; ')
+    # procd exposes the console before first-boot UCI defaults have completed.
+    checks = ['wait_check \'' + check + '\'' for check in checks]
+    return (wait + ' && '.join(checks) + " && printf '\\106\\127\\102\\137\\117\\113\\012'"
             + " || printf '\\106\\127\\102\\137\\106\\101\\111\\114\\012'; poweroff\n")
 
 
