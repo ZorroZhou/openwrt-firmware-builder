@@ -25,6 +25,27 @@ on:
         type: choice
         options: [minimal, standard]
         default: standard
+      lan_ip:
+        description: '管理 IPv4（留空保留官方默认；填写私网地址，掩码固定 /24）'
+        type: string
+        default: ''
+      docker:
+        description: 预装 Docker 和 Dockerman 管理界面（根分区至少 512 MiB）
+        type: boolean
+        default: false
+      proxy:
+        description: '代理插件（预装核心，首次启动保持关闭，需自行导入配置）'
+        type: choice
+        options: [none, openclash, nikki]
+        default: none
+      extra_packages:
+        description: '额外官方软件包（空格分隔，只允许添加包）'
+        type: string
+        default: ''
+      publish_release:
+        description: 构建验证通过后发布 GitHub Release
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -33,6 +54,17 @@ jobs:
   build:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
+    outputs:
+      artifact_id: ${{ steps.firmware.outputs.artifact-id }}
+    env:
+      OPENWRT_VERSION: ${{ inputs.version }}
+      OPENWRT_TARGET: ${{ inputs.target }}
+      ROOTFS_MB: ${{ inputs.rootfs_mb }}
+      PRESET: ${{ inputs.preset }}
+      LAN_IP: ${{ inputs.lan_ip }}
+      DOCKER: ${{ inputs.docker }}
+      PROXY: ${{ inputs.proxy }}
+      EXTRA_PACKAGES: ${{ inputs.extra_packages }}
     defaults:
       run:
         shell: bash
@@ -59,9 +91,10 @@ jobs:
           PRESET: ${{ inputs.preset }}
         run: python3 -u scripts/build.py 2>&1 | tee build.log
       - name: Upload verified firmware
+        id: firmware
         uses: actions/upload-artifact@v4
         with:
-          name: openwrt-${{ inputs.version }}-x86-64-${{ inputs.preset }}-${{ inputs.rootfs_mb }}MiB-${{ github.run_id }}-${{ github.run_attempt }}
+          name: openwrt-${{ inputs.version }}-x86-64-${{ inputs.proxy }}-${{ inputs.rootfs_mb }}MiB-${{ github.run_id }}-${{ github.run_attempt }}
           path: dist/
           if-no-files-found: error
           retention-days: 14
@@ -74,3 +107,22 @@ jobs:
           path: build.log
           if-no-files-found: ignore
           retention-days: 7
+
+  release:
+    if: inputs.publish_release
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          artifact-ids: ${{ needs.build.outputs.artifact_id }}
+          path: dist/
+          merge-multiple: true
+      - name: Verify checksums and publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/release.py

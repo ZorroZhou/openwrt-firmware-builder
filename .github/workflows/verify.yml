@@ -18,11 +18,23 @@ jobs:
       fail-fast: false
       matrix:
         version: ['24.10.6', '25.12.6']
+        proxy: [none, openclash, nikki]
+        include:
+          - version: '25.12.6'
+            proxy: none
+            docker: 'true'
+          - version: '24.10.6'
+            proxy: nikki
+            docker: 'true'
     env:
       OPENWRT_VERSION: ${{ matrix.version }}
       OPENWRT_TARGET: x86-64
-      ROOTFS_MB: '256'
-      PRESET: minimal
+      ROOTFS_MB: '512'
+      PRESET: standard
+      PROXY: ${{ matrix.proxy }}
+      DOCKER: ${{ matrix.docker || 'false' }}
+      LAN_IP: '192.168.77.1'
+      EXTRA_PACKAGES: 'htop'
     defaults:
       run:
         shell: bash
@@ -41,7 +53,7 @@ jobs:
       - name: Save verified images
         uses: actions/upload-artifact@v4
         with:
-          name: verified-${{ matrix.version }}-${{ github.run_id }}-${{ github.run_attempt }}
+          name: verified-${{ matrix.version }}-${{ matrix.proxy }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: dist/
           if-no-files-found: error
           retention-days: 7
@@ -50,8 +62,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: log-${{ matrix.version }}-${{ github.run_id }}-${{ github.run_attempt }}
+          name: log-${{ matrix.version }}-${{ matrix.proxy }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: build.log
           if-no-files-found: ignore
           retention-days: 7
-

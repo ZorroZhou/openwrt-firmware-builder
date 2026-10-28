@@ -1,6 +1,8 @@
 """Official x86/64 ImageBuilder driver; Python 3.12+, Linux build host."""
 import argparse
+import gzip
 import hashlib
+import ipaddress
 import json
 import os
 from pathlib import Path
@@ -13,6 +15,7 @@ import tarfile
 import time
 import urllib.error
 import urllib.request
+from urllib.parse import urlparse
 import zlib
 
 PRESETS = {'minimal': '', 'standard': 'luci-ssl curl ca-bundle'}
@@ -26,12 +29,15 @@ def validate(version, target, size, preset):
         raise ValueError('不支持的 target、根分区大小或 preset')
 
 
-def download(url, dest):
+def download(url, dest, github=False):
     for attempt in range(3):
         try:
             with urllib.request.urlopen(url, timeout=120) as response, dest.open('wb') as out:
-                if not response.url.startswith('https://downloads.openwrt.org/'):
-                    raise ValueError('下载重定向到了非官方地址')
+                allowed = ({'github.com', 'release-assets.githubusercontent.com',
+                            'objects.githubusercontent.com'} if github else {'downloads.openwrt.org'})
+                parsed = urlparse(response.url)
+                if parsed.scheme != 'https' or parsed.hostname not in allowed:
+                    raise ValueError('下载重定向到了非预期地址')
                 shutil.copyfileobj(response, out)
             return
         except urllib.error.HTTPError as exc:
@@ -169,12 +175,129 @@ def validate_outputs(output, version, size):
     return images, manifests
 
 
-def build(version, target, size, preset):
+def validate_features(lan_ip='', docker=False, proxy='none', extra_packages=''):
+    if type(docker) is not bool or proxy not in ('none', 'openclash', 'nikki'):
+        raise ValueError('Docker 或代理选项不合法')
+    if lan_ip:
+        ip = ipaddress.IPv4Address(lan_ip)
+        private = any(ip in ipaddress.IPv4Network(net) for net in
+                      ('10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16'))
+        if not private or int(str(ip).split('.')[-1]) in (0, 255):
+            raise ValueError('管理 IP 必须是私网 /24 网段的有效主机地址')
+    packages = extra_packages.split()
+    if len(extra_packages) > 1024 or len(packages) > 64 or any(
+            not re.fullmatch(r'[a-z0-9][a-z0-9+_.-]*', p) for p in packages):
+        raise ValueError('自定义包只接受软件包名称（最多 64 个），不接受命令或移除包语法')
+
+
+def package_selection(preset, docker, proxy, extra_packages):
+    packages = PRESETS[preset].split()
+    if docker:
+        packages += ['docker', 'dockerd', 'luci-app-dockerman']
+    if proxy != 'none':
+        packages += ['luci-ssl', '-dnsmasq', 'dnsmasq-full', 'kmod-tun', 'kmod-nft-tproxy',
+                     'kmod-inet-diag', 'ip-full']
+        packages += (['luci-app-openclash', 'luci-compat'] if proxy == 'openclash'
+                     else ['mihomo-meta', 'nikki', 'luci-app-nikki'])
+    return list(dict.fromkeys(packages + extra_packages.split()))
+
+
+def write_defaults(overlay, lan_ip, proxy):
+    defaults = overlay / 'etc/uci-defaults/99-firmware-builder'
+    defaults.parent.mkdir(parents=True, exist_ok=True)
+    lines = ['#!/bin/sh', 'set -e']
+    if lan_ip:
+        lines += ["uci -q get network.lan >/dev/null", "uci set network.lan.proto='static'",
+                  f"uci set network.lan.ipaddr='{lan_ip}'", "uci set network.lan.netmask='255.255.255.0'",
+                  'uci commit network']
+    if proxy != 'none':
+        lines += [f"uci set {proxy}.config.enabled='0'" if proxy == 'nikki'
+                  else "uci set openclash.config.enable='0'", f'uci commit {proxy}',
+                  f'/etc/init.d/{proxy} disable']
+    lines += ['exit 0', '']
+    defaults.write_text('\n'.join(lines))
+    defaults.chmod(0o755)
+    return defaults
+
+
+def fetch_locked(entry, workspace):
+    url, digest = entry['url'], entry['sha256']
+    if not re.fullmatch(r'https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/releases/download/[^/]+/[^/]+', url):
+        raise ValueError('插件锁文件必须使用固定 GitHub Release 地址')
+    if not re.fullmatch(r'[0-9a-f]{64}', digest):
+        raise ValueError('插件锁文件 SHA256 不合法')
+    path = workspace / url.rsplit('/', 1)[1]
+    download(url, path, github=True)
+    verify(path, digest)
+    return path
+
+
+def prepare_plugin(builder, workspace, overlay, version, proxy, manager):
+    if proxy == 'none':
+        return []
+    lock = json.loads((Path(__file__).resolve().parents[1] / 'configs/plugins.lock.json').read_text())
+    records, packages = [], []
+    suffix = '.apk' if manager == 'apk' else '.ipk'
+    if proxy == 'openclash':
+        entry = lock[proxy][suffix[1:]]
+        packages.append(fetch_locked(entry, workspace))
+        records.append(entry)
+        core_entry = lock[proxy]['core']
+        core_archive = fetch_locked(core_entry, workspace)
+        core = overlay / 'etc/openclash/core/clash_meta'
+        core.parent.mkdir(parents=True)
+        with gzip.open(core_archive, 'rb') as source, core.open('wb') as dest:
+            shutil.copyfileobj(source, dest)
+        if core.read_bytes()[:4] != b'\x7fELF':
+            raise ValueError('OpenClash 核心不是 ELF 可执行文件')
+        core.chmod(0o755)
+        records.append(core_entry)
+    else:
+        entry = lock[proxy]['.'.join(version.split('.')[:2])]
+        archive = fetch_locked(entry, workspace)
+        records.append(entry)
+        extracted = workspace / 'nikki-packages'
+        with tarfile.open(archive) as bundle:
+            bundle.extractall(extracted, filter='data')
+        for name in ('mihomo-meta', 'nikki', 'luci-app-nikki'):
+            separator = '-' if manager == 'apk' else '_'
+            candidates = list(extracted.glob(name + separator + '*' + suffix))
+            if len(candidates) != 1:
+                raise ValueError(f'Nikki 归档缺少唯一的 {name}{suffix}')
+            packages.append(candidates[0])
+    for package in packages:
+        shutil.copy2(package, builder / 'packages' / package.name)
+    if manager == 'apk':
+        # Authenticate pinned downloads first, then sign only these local packages.
+        # Official repository signature checking remains enabled.
+        run(['make', '_check_keys'], builder)
+        apk = builder / 'staging_dir/host/bin/apk'
+        for package in packages:
+            run([str(apk.resolve()), 'adbsign', '--allow-untrusted', '--sign-key',
+                 str((builder / 'keys/local-private-key.pem').resolve()),
+                 str((builder / 'packages' / package.name).resolve())], builder)
+    return records
+
+
+def verify_installed(manifests, required):
+    names = {line.split()[0] for path in manifests for line in path.read_text().splitlines() if line.strip()}
+    missing = set(required) - names
+    if missing:
+        raise ValueError('manifest 缺少请求的软件包：' + ', '.join(sorted(missing)))
+
+
+def build(version, target, size, preset, lan_ip='', docker=False, proxy='none', extra_packages=''):
     validate(version, target, size, preset)
+    validate_features(lan_ip, docker, proxy, extra_packages)
+    if (docker or proxy != 'none') and size < 512:
+        raise ValueError('启用 Docker 或代理插件时根分区至少 512 MiB')
     workspace, dist = Path('work'), Path('dist')
     if workspace.exists() or dist.exists():
         raise ValueError('work/ 或 dist/ 已存在；请使用干净工作目录，防止混入旧产物')
     workspace.mkdir()
+    workspace = workspace.resolve()
+    overlay = workspace / 'files'
+    defaults = write_defaults(overlay, lan_ip, proxy)
     base = f'https://downloads.openwrt.org/releases/{version}/targets/x86/64/'
     checksums = workspace / 'sha256sums'
     download(base + 'sha256sums', checksums)
@@ -192,21 +315,30 @@ def build(version, target, size, preset):
     # ImageBuilder clears MAKEFLAGS in recursive invocations: persist the setting.
     (builder / '.config').write_text(configure_rootfs(config, size))
     print(f'官方 ImageBuilder：{name}；包管理器：{manager}', flush=True)
+    plugins = prepare_plugin(builder, workspace, overlay, version, proxy, manager)
+    packages = package_selection(preset, docker, proxy, extra_packages)
     # Keep official repositories, signing keys and default device packages intact.
     run(['make', 'info'], builder)
-    run(['make', 'image', 'PROFILE=generic', f'PACKAGES={PRESETS[preset]}'], builder)
+    args = ['make', 'image', 'PROFILE=generic', 'PACKAGES=' + ' '.join(packages),
+            f'FILES={overlay}']
+    if proxy != 'none':
+        args.append(f'DISABLED_SERVICES={proxy}')
+    run(args, builder)
     output = builder / 'bin/targets/x86/64'
     images, manifests = validate_outputs(output, version, size)
+    verify_installed(manifests, [p for p in packages if not p.startswith('-')])
     # Publish only after all checks pass.
     dist.mkdir()
     for path in images + manifests:
         shutil.copy2(path, dist / path.name)
-    metadata = dict(version=version, target=target, profile='generic', rootfs_mib=size,
-                    preset=preset, extra_packages=PRESETS[preset], package_manager=manager,
+    metadata = dict(builder_version='2.0.0', version=version, target=target, profile='generic', rootfs_mib=size,
+                    preset=preset, packages=packages, lan_ip=lan_ip or 'official-default',
+                    docker=docker, proxy=proxy, plugins=plugins, package_manager=manager,
                     imagebuilder_url=base + name, imagebuilder_sha256=digest,
                     github_sha=os.getenv('GITHUB_SHA'), run_id=os.getenv('GITHUB_RUN_ID'))
     (dist / 'build-info.json').write_text(json.dumps(metadata, indent=2) + '\n')
     shutil.copy2(checksums, dist / 'imagebuilder-sha256sums.txt')
+    shutil.copy2(defaults, dist / 'uci-defaults.txt')
     files = sorted(dist.iterdir())
     (dist / 'SHA256SUMS').write_text(''.join(f'{sha256(p)}  {p.name}\n' for p in files))
     print('产物检查通过：', ', '.join(p.name for p in images))
@@ -218,9 +350,17 @@ def main():
     args = parser.parse_args()
     values = (os.environ['OPENWRT_VERSION'], os.environ['OPENWRT_TARGET'],
               int(os.environ['ROOTFS_MB']), os.environ['PRESET'])
+    docker_raw = os.getenv('DOCKER', 'false')
+    if docker_raw not in ('true', 'false'):
+        raise ValueError('DOCKER 必须为 true 或 false')
+    features = (os.getenv('LAN_IP', '').strip(), docker_raw == 'true',
+                os.getenv('PROXY', 'none'), os.getenv('EXTRA_PACKAGES', '').strip())
     validate(*values)
+    validate_features(*features)
+    if (features[1] or features[2] != 'none') and values[2] < 512:
+        raise ValueError('启用 Docker 或代理插件时根分区至少 512 MiB')
     if not args.validate_only:
-        build(*values)
+        build(*values, *features)
 
 
 if __name__ == '__main__':
@@ -229,4 +369,3 @@ if __name__ == '__main__':
     except Exception as exc:
         print(f'构建失败：{exc}', file=sys.stderr)
         sys.exit(1)
-

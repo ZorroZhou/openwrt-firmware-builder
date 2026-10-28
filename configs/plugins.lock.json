@@ -1,0 +1,31 @@
+{
+  "openclash": {
+    "ipk": {
+      "url": "https://github.com/vernesong/OpenClash/releases/download/v0.48.002/luci-app-openclash_0.48.002_all.ipk",
+      "sha256": "f3f0d0514553aea8d542c62dc52ac26d1f79dbda24204280f1cb8ea7fff71e9e",
+      "release": "v0.48.002"
+    },
+    "apk": {
+      "url": "https://github.com/vernesong/OpenClash/releases/download/v0.48.002/luci-app-openclash-0.48.002.apk",
+      "sha256": "f7ebbd43f9be15c5e6df26e5d0c03d50d0bb8f7fa4cc0d2c2bf048b08c0b155b",
+      "release": "v0.48.002"
+    },
+    "core": {
+      "url": "https://github.com/MetaCubeX/mihomo/releases/download/v1.19.33/mihomo-linux-amd64-v1-v1.19.33.gz",
+      "sha256": "8ec92e7b2fdc6b853ba00156bab7e4e965c8b0d843b8c4ac8ab98795f02ad524",
+      "release": "v1.19.33"
+    }
+  },
+  "nikki": {
+    "24.10": {
+      "url": "https://github.com/nikkinikki-org/OpenWrt-nikki/releases/download/v1.26.2/nikki_x86_64-openwrt-24.10.tar.gz",
+      "sha256": "e8f14657155612f96e651ec452a59cd3e89b3d390c501883917bd8a0de7673fa",
+      "release": "v1.26.2"
+    },
+    "25.12": {
+      "url": "https://github.com/nikkinikki-org/OpenWrt-nikki/releases/download/v1.26.2/nikki_x86_64-openwrt-25.12.tar.gz",
+      "sha256": "510c4dd3204842ccf41f567198bf95c03bd407173dcdcee0a259af6d5b43fa05",
+      "release": "v1.26.2"
+    }
+  }
+}
