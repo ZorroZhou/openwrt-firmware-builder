@@ -361,6 +361,14 @@ def verify_installed(manifests, required):
     return names
 
 
+def check_openclash_language(builder):
+    translations = [p for base in ('build_dir', 'staging_dir')
+                    for p in (builder / base).glob('target-*/root-*/usr/lib/lua/luci/i18n/openclash.*.lmo')]
+    if not any(p.stat().st_size and any(language in p.name.lower().replace('_', '-')
+               for language in ('zh-cn', 'zh-hans')) for p in translations):
+        raise ValueError('OpenClash 缺少内置简体中文资源')
+
+
 def access_notes(info):
     ip = info['lan_ip']
     web = f'https://{ip}/' if info['luci'] else '未预装 LuCI 网页管理界面（minimal 基础系统）'
@@ -425,9 +433,7 @@ def build(version, target, size, preset, lan_ip='', docker=False, proxy='none', 
     installed = verify_installed(manifests, [p for p in packages if not p.startswith('-')])
     verify_installed(manifests, ['firewall4' if firewall == 'nftables' else 'firewall'])
     if proxy == 'openclash':
-        translations = list((builder / 'staging_dir').glob('target-*/root-*/usr/lib/lua/luci/i18n/openclash.*.lmo'))
-        if not any('zh-cn' in p.name or 'zh_Hans' in p.name or 'zh-cn' in p.name.replace('_', '-') for p in translations):
-            raise ValueError('OpenClash 缺少内置简体中文资源')
+        check_openclash_language(builder)
     # Publish only after all checks pass.
     dist.mkdir()
     for path in images + manifests:

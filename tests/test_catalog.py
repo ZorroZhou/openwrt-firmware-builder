@@ -1,6 +1,7 @@
 import importlib.util
 from pathlib import Path
 import unittest
+import tempfile
 
 spec = importlib.util.spec_from_file_location('builder', Path(__file__).resolve().parents[1] / 'scripts/build.py')
 b = importlib.util.module_from_spec(spec)
@@ -55,6 +56,19 @@ class CatalogTests(unittest.TestCase):
                                    package_manager='apk', firewall='nftables', docker=True, proxy='nikki'))
         for word in ('https://192.168.77.1/', '**root**', '空密码', '旧配置', 'nftables'):
             self.assertIn(word, text)
+
+    def test_openclash_chinese_check_uses_actual_build_root(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with self.assertRaises(ValueError):
+                b.check_openclash_language(root)
+            language = root / 'build_dir/target-x86_64_musl/root-x86/usr/lib/lua/luci/i18n/openclash.zh-cn.lmo'
+            language.parent.mkdir(parents=True)
+            language.write_bytes(b'translation fixture')
+            b.check_openclash_language(root)
+            language.write_bytes(b'')
+            with self.assertRaises(ValueError):
+                b.check_openclash_language(root)
 
 
 if __name__ == '__main__':
