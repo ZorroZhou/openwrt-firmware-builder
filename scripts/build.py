@@ -470,6 +470,7 @@ def prepare_istore(builder, workspace, overlay, manager, arch):
     if not re.fullmatch(r'[0-9a-f]{40}', revision):
         raise ValueError('iStore 源码修订不合法')
     record = dict(repository='istoreos/istore', release=revision, installation='signed-upstream-feed',
+                  version_policy='latest-compatible-feed', key=settings['key'],
                   source_url='https://github.com/istoreos/istore/tree/' + revision, repositories=settings['repositories'])
     preserve_current_license(record, workspace, overlay)
     return [record]
@@ -502,6 +503,8 @@ def check_openclash_language(builder):
 
 def access_notes(info):
     ip = info['lan_ip']
+    policy = info.get('network_policy', {})
+    bypass = policy.get('mode') == 'bypass'
     web = f'https://{ip}/' if info['luci'] else '未预装 LuCI 网页管理界面（minimal 基础系统）'
     return (f"# OpenWrt {info['version']} 使用说明\n\n"
             f"- 目标：{info.get('target', 'x86/64')} / {info.get('profile', 'generic')}\n- 管理 IPv4：**{ip}**\n"
@@ -514,7 +517,12 @@ def access_notes(info):
             f"- 简体中文：{'LuCI 及所选管理插件中文资源已包含' if info['luci'] else '无网页界面，不追加 LuCI 语言包'}\n"
             f"- Docker：{'已预装' if info['docker'] else '未选择'}\n"
             f"- 代理：{info['proxy']}（如已选择，首次启动保持关闭，导入自己的配置后再启用）\n\n"
-            + f"- 路由与 DHCP：{info.get('network_policy', {})}\n- iStore：{info.get('istore', False)}\n"
+            + f"- 路由模式：{'旁路由' if bypass else '主路由'}\n"
+            + f"- LAN IPv4 DHCP：{'关闭' if bypass else '开启'}\n"
+            + f"- LAN RA/DHCPv6/NDP：{'关闭' if bypass else '遵循官方设备默认配置'}\n"
+            + f"- 上游网关：{policy.get('gateway') or '遵循官方 WAN 配置'}\n"
+            + f"- 上游 DNS：{' '.join(policy.get('dns', [])) or '遵循官方 WAN 配置'}\n"
+            + f"- iStore：{'已预装' if info.get('istore') else '未选择'}\n"
             + ''.join(f'- 组件版本：{name} = {value}\n'
                       for name, value in sorted(info.get('proxy_versions', {}).items())) + '\n'
             '先在隔离虚拟机验收。不要与现有路由器在同一网段同时提供 DHCP。\n')

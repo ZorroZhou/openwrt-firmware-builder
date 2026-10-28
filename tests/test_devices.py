@@ -85,7 +85,22 @@ class DeviceTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 build.resolve_release(version, catalog)
 
-    def test_directory_parser_rejects_parent_and_external_links(self):
-        parser = devices.Directories()
-        parser.feed('<a href="../">up</a><a href="ath79/">ok</a><a href="https://evil/">no</a>')
-        self.assertEqual(parser.names, {'ath79'})
+    def test_catalog_uses_the_same_official_overview_as_firmware_selector(self):
+        import discover_devices
+        overview = dict(release='25.12.6', profiles=[dict(id='generic', target='armsr/armv8')])
+        data = dict(version_number='25.12.6', target='armsr/armv8', arch_packages='aarch64_generic',
+                    profiles={'generic': dict(titles=[{'title': 'Generic EFI'}])})
+        def fetch(url):
+            return overview if url.endswith('/.overview.json') else data
+        with tempfile.TemporaryDirectory() as tmp, patch.object(discover_devices, 'official_json', side_effect=fetch):
+            discover_devices.discover('25.12.6', Path(tmp))
+            self.assertIn('Generic EFI', (Path(tmp) / 'devices.csv').read_text(encoding='utf-8-sig'))
+            with self.assertRaises(ValueError):
+                discover_devices.discover('25.12.6', Path(tmp), 'no such device')
+
+    def test_initramfs_is_not_misrepresented_as_an_imagebuilder_product(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            (directory / 'sha256sums').write_text('')
+            with self.assertRaisesRegex(ValueError, 'initramfs'):
+                devices.check_outputs(directory, {'images': [{'filesystem': 'initramfs', 'name': 'kernel.bin'}]})

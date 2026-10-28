@@ -1,6 +1,5 @@
 """Official device metadata, conservative feature matching and network policy."""
 import hashlib
-from html.parser import HTMLParser
 import ipaddress
 import json
 from pathlib import Path
@@ -39,6 +38,8 @@ def profile_data(version, target, profile):
     selected = data['profiles'][profile]
     if not selected.get('images'):
         raise ValueError('此 Profile 没有官方发布镜像，不能假设可刷写')
+    if all(i.get('filesystem') == 'initramfs' for i in selected['images']):
+        raise ValueError('仅有 initramfs 的设备需要源码构建，不适用 ImageBuilder 拼装')
     return data, selected
 
 
@@ -138,6 +139,9 @@ def check_outputs(output, selected):
             expected[parts[1].lstrip('*')] = parts[0]
     images = []
     for info in selected['images']:
+        # ImageBuilder reuses the released kernel; it does not rebuild initramfs kernels.
+        if info.get('filesystem') == 'initramfs':
+            continue
         name = info['name']
         if Path(name).name != name or not re.fullmatch(r'[a-zA-Z0-9_.+-]+', name):
             raise ValueError('镜像文件名不合法')
@@ -148,27 +152,11 @@ def check_outputs(output, selected):
             if hashlib.file_digest(source, 'sha256').hexdigest() != expected[name]:
                 raise ValueError('ImageBuilder 镜像校验不符：' + name)
         images.append(path)
+    if not images:
+        raise ValueError('此设备仅提供 initramfs，需要源码构建，不能假装 ImageBuilder 已生成可刷写镜像')
     manifests = list(output.glob('*.manifest'))
     if not manifests or any(not p.stat().st_size for p in manifests):
         raise ValueError('缺少软件包清单')
     return images, manifests
 
 
-class Directories(HTMLParser):
-    def __init__(self):
-        super().__init__()
-        self.names = set()
-
-    def handle_starttag(self, tag, attributes):
-        href = dict(attributes).get('href', '')
-        if tag == 'a' and re.fullmatch(r'[a-z0-9][a-z0-9_-]*/', href):
-            self.names.add(href[:-1])
-
-
-def directories(url):
-    parser = Directories()
-    with urllib.request.urlopen(url, timeout=90) as response:
-        if response.url != url:
-            raise ValueError('官方目录重定向不符合预期')
-        parser.feed(response.read().decode())
-    return sorted(parser.names)

@@ -52,13 +52,13 @@
 
 GitHub 原生输入不能实时联动官网。运行 Refresh version menu，下载 official-version-menu，将三个同路径文件提交到默认分支才更新菜单；此工作流只读仓库。也可执行 `python3 scripts/sync_versions.py` 后提交。构建仍实时验证范围，过期选择被拒绝。
 
-Discover 工作流遍历官方目标目录及所有子目标 profiles.json，任一请求失败就失败，不拿不完整结果冒充全集。各小版本支持设备可能不同，应按实际版本查询。构建前再次核对目标、Profile、架构和镜像类型。
+Discover 工作流读取与 Firmware Selector 相同的官方 .overview.json，再读取其中全部目标的 profiles.json，核对两份设备清单一致；任一请求失败就失败，不拿不完整结果冒充全集。各小版本支持设备可能不同，应按实际版本查询。构建前再次核对目标、Profile、架构和镜像类型。
 
 ## 校验、模拟器与产物
 
 从所选目标 sha256sums 唯一解析官方 ImageBuilder，支持 tar.xz/tar.zst，经 HTTPS 下载并校验 SHA256。当前未独立验证官方清单 GPG/usign 签名；软件源签名检查保持开启。
 
-x86 generic 检查 BIOS/EFI、ext4/squashfs 四种整盘镜像的 gzip、MBR/GPT、根分区大小与镜像长度。其他设备按官方 Profile 的预期文件和 ImageBuilder 生成的校验清单验证，不套用 x86 磁盘规则。容量由设备构建规则约束；不宣称已对所有硬件格式逐一逆向解析。
+x86 generic 检查 BIOS/EFI、ext4/squashfs 四种整盘镜像的 gzip、MBR/GPT、根分区大小与镜像长度。其他设备按官方 Profile 的预期文件和 ImageBuilder 生成的校验清单验证，不套用 x86 磁盘规则。ImageBuilder 不重新编译 initramfs 内核；此类源码构建产物不列为缺失，仍严格检查其 factory/sysupgrade 等拼装产物；只有 initramfs 的设备提前拒绝，需使用源码构建。容量由设备构建规则约束；不宣称已对所有硬件格式逐一逆向解析。
 
 x86/64/generic 使用隔离 QEMU BIOS 启动；armsr/armv8/generic 使用 QEMU virt + ARM64 EFI。其他板级内核不能假装在通用虚拟板启动，仅记录镜像校验及可用的跨架构核心/CLI 检查，不算板级启动或 DHCP/流量测试。实际端口、无线、启动链、闪存与代理/容器流量需在隔离硬件环境验收。失败不发布固件，保存 build.log/smoke.log。
 
