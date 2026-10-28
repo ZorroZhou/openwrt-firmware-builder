@@ -74,6 +74,8 @@ OpenClash 通过 GitHub `releases/latest` API 获取最新正式版本（不接�
 
 软件包依赖由所选官方 ImageBuilder 检查，缺依赖或冲突会失败。这不能保证未来任意上游版本都兼容，构建检查也不替代实际代理流量测试。Nikki 使用分支软件源的最新可用兼容包，其核心可能比 Mihomo GitHub 最新版稍晚；不强行混装 OpenClash 的核心。版本在构建开始时解析，构建过程中上游再发布新版不会改变本次已选资产。
 
+手动构建选择代理时，在上传固件和发布 Release 前额外进行隔离 QEMU 启动检查，验证核心可执行、管理地址及代理默认关闭；Nikki 同时检查源配置保留。失败时不上传固件、不进入发布任务，保存构建和启动日志。这仍不代表已经验证真实代理订阅与转发流量。
+
 `build-info.json` 的 `proxy_versions`、`.manifest`、`ACCESS.md`、运行摘要与 Release 正文显示实际安装版本。仅重试 Release 上传任务不会重新安装插件；需要新版本时重新运行完整 Build OpenWrt。
 
 构建记录保存本次解析出的下载 URL、版本、哈希、参数和源码提交。每次获取最新版本，因此不同日期不保证产物相同；API 限流、源不可用或校验失败时明确终止。
@@ -110,7 +112,7 @@ OpenClash 通过 GitHub `releases/latest` API 获取最新正式版本（不接�
 .github/workflows/build.yml    手动参数与可选发布
 .github/workflows/verify.yml   三代版本的兼容构建与启动检查
 .github/workflows/refresh-versions.yml 生成官网版本菜单更新文件
-configs/plugins.lock.json     第三方下载锁定
+configs/plugins.lock.json     插件上游策略与信任公钥哈希
 scripts/build.py              验证、下载、注入、构建、产物检查
 scripts/smoke.py              隔离 QEMU 启动检查
 scripts/release.py            完整性复核与草稿发布

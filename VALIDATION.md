@@ -1,5 +1,23 @@
 # 验证记录
 
+## V2.3：每次构建解析最新代理组件
+
+日期：2026-10-28。
+
+- 38 项单元与失败路径测试通过；三个工作流的 actionlint 检查通过。
+- OpenClash/Mihomo 通过各自 GitHub latest 正式发布 API 解析标签、对应格式/架构和资产 SHA256；资产仍使用确切标签地址下载，不使用浮动下载 URL。
+- 新增缺少匹配资产、重复资产、错误来源、缺失 SHA256、草稿/预发布和未知仓库等失败路径测试；不静默回退旧版。核心另检查 x86-64 ELF 格式，运行兼容性继续由隔离启动测试检查。
+- Nikki 保持每次从对应 OpenWrt 分支的作者签名源安装最新可用包，不混装 OpenClash 的独立核心。
+- 实际安装组件版本记录在 manifest、build-info.json、ACCESS.md、运行摘要和 Release 正文；本地另确认版本显示内容。仅重试发布任务不会改变已经构建的产物。
+- OpenClash/Mihomo 所选标签的许可证原文随固件和 Artifact 保留，记录来源 URL 与下载内容 SHA256。
+- 手动 Build OpenWrt 选择代理时，也必须在固件上传/Release 发布前通过隔离启动检查；失败保留 build.log 和 smoke.log，不进入发布任务。此流程不替代真实代理流量测试。
+- [代理动态版本首轮兼容检查](https://github.com/ZorroZhou/openwrt-firmware-builder/actions/runs/40623483455)：11 个组合全部通过，包含 23/24/25 的 OpenClash、支持分支的 Nikki 和三代 Docker。
+- [真实手动构建与发布](https://github.com/ZorroZhou/openwrt-firmware-builder/actions/runs/40624437242)：build、release 均成功，固件上传前的隔离启动检查通过。使用 25.12.6、standard、512 MiB、OpenClash、不启用 Docker。
+- [实际 Release](https://github.com/ZorroZhou/openwrt-firmware-builder/releases/tag/firmware-25.12.6-40624437242-1) 的 20 个附件全部上传成功；正文显示 OpenClash 0.48.002、Mihomo v1.19.33，以及 192.168.1.1、root、初始密码未设置。
+- 另下载实际发布的 build-info.json 核对：builder_version=2.3.0，动态版本策略、解析后的固定标签 URL、上游资产 SHA256、对应标签源码/许可证 URL 与内容哈希均保留。
+- 未访问或修改 VM101。
+- [加入手动发布启动检查后的重复复核](https://github.com/ZorroZhou/openwrt-firmware-builder/actions/runs/40624286914)：截至本次记录，10/11 项通过，23.05.6 + Docker（不带代理）仍在镜像打包阶段，尚未记为通过。该组合在上面的首轮矩阵已通过；新增手动代理发布检查也已通过真实运行验收。此处保留未完成状态，不将其描述为本轮全部成功。
+
 ## V2.2：完整小版本菜单、作者签名源和第三方来源
 
 日期：2026-10-28。
