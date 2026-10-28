@@ -2,6 +2,19 @@
 
 使用官方 OpenWrt ImageBuilder，在 GitHub Actions 定制固件。设备入口支持官方发布元数据列出的 target/subtarget 和设备 Profile，不再固定 x86；缺少 ImageBuilder、匹配包、资源或预期镜像时明确失败，不混装、不静默省略功能。入口覆盖不等于全部设备已经过实机验收。
 
+## Actions 流程说明
+
+**只想生成固件，使用 Build OpenWrt 即可，其余流程无需先运行。**
+
+| 左侧流程（点击可进入） | 用来做什么 | 什么时候使用 | 运行后的结果 |
+| --- | --- | --- | --- |
+| [Build OpenWrt](https://github.com/ZorroZhou/openwrt-firmware-builder/actions/workflows/build.yml) | 按版本、设备、分区和插件选项生成固件 | 日常构建，手动点击 Run workflow | 检查通过后提供固件 Artifacts；勾选 publish_release 才发布 Release |
+| [Discover official devices](https://github.com/ZorroZhou/openwrt-firmware-builder/actions/workflows/devices.yml) | 从官网查询某版本支持的设备，可按品牌/型号筛选 | 想核对设备支持情况或导出清单时；构建前不必运行 | official-devices 下载包，包含 CSV 和 JSON；不生成固件、不更新下拉菜单 |
+| [Refresh version menu](https://github.com/ZorroZhou/openwrt-firmware-builder/actions/workflows/refresh-versions.yml) | 重新获取官网最新两代版本，并刷新版本和设备菜单文件 | 官网发布新版本/设备，仓库菜单需要更新时；主要供维护者使用 | official-version-menu 下载包；须将其中四个同路径文件提交到 main，页面菜单才会更新，不自动改仓库、不生成固件 |
+| [Verify firmware builds](https://github.com/ZorroZhou/openwrt-firmware-builder/actions/workflows/verify.yml) | 自动检查代码、失败路径与代表性平台/插件组合 | 相关代码或工作流变更后自动运行；主要供开发验收 | 各组合检查结果、日志与临时测试固件；不发布 Release，不代表全部硬件实机验证 |
+
+左侧流程页用于查看运行记录及手动触发。每个流程运行后，点开一条记录，在 **Summary（摘要）** 查看用途说明；右侧具体任务日志可定位失败步骤。无需为了看说明启动构建，直接阅读本表即可。
+
 ## 找设备与构建
 
 1. **Actions → Build OpenWrt → Run workflow**，选择 OpenWrt 版本和设备型号。设备下拉框显示品牌/型号、目标平台与 Profile，自动绑定后两项，无需手填设备 ID。默认选择 x86 通用设备。

@@ -72,6 +72,17 @@ jobs:
         shell: bash
     steps:
       - uses: actions/checkout@v4
+      - name: Workflow purpose and help
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<'WORKFLOW_HELP'
+          ## Verify firmware builds：开发验收
+
+          相关代码变更后自动运行单元测试和代表性平台/插件构建检查。测试固件与日志只用于验收，不发布 Release；通过不代表官网所有硬件已完成实机验证。
+
+          此段是用途说明，任务是否成功请查看本次运行状态及后续步骤。
+
+          [查看全部流程说明](https://github.com/ZorroZhou/openwrt-firmware-builder#actions-流程说明)
+          WORKFLOW_HELP
       - name: Test and validate inputs
         run: |
           python3 -m unittest discover -s tests -v

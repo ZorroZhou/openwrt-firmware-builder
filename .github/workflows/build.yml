@@ -2061,6 +2061,17 @@ jobs:
         shell: bash
     steps:
       - uses: actions/checkout@v4
+      - name: Workflow purpose and help
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<'WORKFLOW_HELP'
+          ## Build OpenWrt：构建固件
+
+          选择版本、设备、分区和插件后生成固件。成功后下载本次运行的 Artifacts；只有勾选 publish_release 才会发布 Release。其余三个流程不是构建前置步骤。
+
+          此段是用途说明，任务是否成功请查看本次运行状态及后续步骤。
+
+          [查看全部流程说明](https://github.com/ZorroZhou/openwrt-firmware-builder#actions-流程说明)
+          WORKFLOW_HELP
       - name: Validate inputs and run regression tests
         run: |
           python3 -m unittest discover -s tests -v

@@ -18,6 +18,17 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+      - name: Workflow purpose and help
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<'WORKFLOW_HELP'
+          ## Discover official devices：查询官方设备
+
+          查询所选版本的官方设备清单，支持品牌/型号筛选。结果在 official-devices 下载包的 CSV/JSON 中。此流程不生成固件，也不更新构建页面的设备下拉菜单。
+
+          此段是用途说明，任务是否成功请查看本次运行状态及后续步骤。
+
+          [查看全部流程说明](https://github.com/ZorroZhou/openwrt-firmware-builder#actions-流程说明)
+          WORKFLOW_HELP
       - name: Export official targets and device profiles
         env:
           VERSION: ${{ inputs.version }}

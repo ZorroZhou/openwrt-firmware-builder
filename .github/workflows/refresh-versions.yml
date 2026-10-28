@@ -9,6 +9,17 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+      - name: Workflow purpose and help
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<'WORKFLOW_HELP'
+          ## Refresh version menu：更新菜单文件
+
+          供维护者获取官网最新两代版本与设备菜单。完成后下载 official-version-menu，将其中四个同路径文件提交到 main 后菜单才会更新。此流程不自动提交仓库，也不生成固件。
+
+          此段是用途说明，任务是否成功请查看本次运行状态及后续步骤。
+
+          [查看全部流程说明](https://github.com/ZorroZhou/openwrt-firmware-builder#actions-流程说明)
+          WORKFLOW_HELP
       - name: Read official release catalog and generate menu
         run: |
           python3 scripts/sync_versions.py --output-dir catalog-update
