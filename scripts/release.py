@@ -48,7 +48,7 @@ def publish(directory):
     run_id, attempt = os.environ['GITHUB_RUN_ID'], os.environ['GITHUB_RUN_ATTEMPT']
     tag = f"firmware-{info['version']}-{run_id}-{attempt}"
     notes = (directory / 'ACCESS.md').read_text(encoding='utf-8')
-    body = (f"OpenWrt {info['version']} / x86-64 / {info['rootfs_mib']} MiB\n\n"
+    body = (f"OpenWrt {info['version']} / {info.get('target', 'x86/64')} / {info.get('profile', 'generic')} / {info['rootfs_mib']} MiB\n\n"
             f"Preset: {info['preset']}; Docker: {info['docker']}; Proxy: {info['proxy']}\n\n"
             + notes + '\n\n'
             f"Sources: [OpenWrt {info['version']}](https://github.com/openwrt/openwrt/tree/v{info['version']}); "

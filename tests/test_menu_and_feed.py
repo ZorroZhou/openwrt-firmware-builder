@@ -17,11 +17,11 @@ with patch.dict(sys.modules, {'build': b}):
 
 
 class MenuTests(unittest.TestCase):
-    def test_all_minor_versions_of_only_three_majors_are_listed(self):
+    def test_all_minor_versions_of_only_two_majors_are_listed(self):
         catalog = dict(versions_list=['25.12.6', '25.12.0', '24.10.8', '24.10.0',
                                      '23.05.6', '23.05.0', '22.03.7', '26.01.0-rc1'])
         versions = b.available_releases(catalog)
-        self.assertEqual(versions, ['25.12.6', '25.12.0', '24.10.8', '24.10.0', '23.05.6', '23.05.0'])
+        self.assertEqual(versions, ['25.12.6', '25.12.0', '24.10.8', '24.10.0'])
         with tempfile.TemporaryDirectory() as tmp:
             sync.generate(catalog, Path(tmp))
             text = (Path(tmp) / '.github/workflows/build.yml').read_text(encoding='utf-8')

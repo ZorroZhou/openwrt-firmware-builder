@@ -18,17 +18,21 @@ import urllib.request
 from urllib.parse import urlparse
 import zlib
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import devices
+
 PRESETS = {'minimal': '', 'standard': 'luci-ssl luci-i18n-base-zh-cn curl ca-bundle'}
-SIZES = {256, 512, 1024, 2048, 4096}
+SIZES = {0, 256, 512, 1024, 2048, 4096}
 VERSION_SOURCE = 'https://downloads.openwrt.org/.versions.json'
-CHANNELS = {'最新大版本': 0, '上一大版本': 1, '上两个大版本': 2,
-            'latest': 0, 'previous': 1, 'third': 2}
+CHANNELS = {'最新大版本': 0, '上一大版本': 1,
+            'latest': 0, 'previous': 1}
 
 
 def validate(version, target, size, preset):
     if version not in CHANNELS and not re.fullmatch(r'[1-9][0-9]\.[0-9]{2}\.(0|[1-9][0-9]*)', version):
         raise ValueError('请选择菜单中的完整稳定版本号；不接受 snapshot、RC 或下载 URL')
-    if target != 'x86-64' or size not in SIZES or preset not in PRESETS:
+    devices.target_name(target)
+    if size not in SIZES or preset not in PRESETS:
         raise ValueError('不支持的 target、根分区大小或 preset')
 
 
@@ -39,7 +43,7 @@ def official_catalog():
         return json.load(response)
 
 
-def latest_three(catalog):
+def latest_two(catalog):
     versions = catalog.get('versions_list')
     if not isinstance(versions, list) or not all(isinstance(v, str) for v in versions):
         raise ValueError('官方版本数据格式不符合预期')
@@ -51,24 +55,24 @@ def latest_three(catalog):
         if major not in majors:
             chosen.append(version)
             majors.add(major)
-        if len(chosen) == 3:
+        if len(chosen) == 2:
             return chosen
-    raise ValueError('官网没有提供三个完整稳定大版本；停止构建，不猜测版本目录')
+    raise ValueError('官网没有提供两个完整稳定大版本；停止构建，不猜测版本目录')
 
 
 def resolve_release(selection, catalog):
-    latest = latest_three(catalog)
+    latest = latest_two(catalog)
     if selection in CHANNELS:
         return latest[CHANNELS[selection]]
     if (selection not in catalog['versions_list'] or
             selection.split('.')[0] not in {v.split('.')[0] for v in latest} or
             not re.fullmatch(r'[1-9][0-9]\.[0-9]{2}\.[0-9]+', selection)):
-        raise ValueError('版本不在官网最新三个稳定大版本范围内')
+        raise ValueError('版本不在官网最新两个稳定大版本范围内')
     return selection
 
 
 def available_releases(catalog):
-    majors = {v.split('.')[0] for v in latest_three(catalog)}
+    majors = {v.split('.')[0] for v in latest_two(catalog)}
     return sorted({v for v in catalog['versions_list']
                    if re.fullmatch(r'[1-9][0-9]\.[0-9]{2}\.[0-9]+', v) and v.split('.')[0] in majors},
                   key=lambda v: tuple(map(int, v.split('.'))), reverse=True)
@@ -120,9 +124,9 @@ def download(url, dest, github=False, allowed_hosts=None):
         time.sleep(2 ** attempt)
 
 
-def select_archive(text, version):
+def select_archive(text, version, target='x86/64'):
     pattern = re.compile(r'openwrt-imagebuilder-' + re.escape(version)
-                         + r'-x86-64\.Linux-x86_64\.tar\.(?:zst|xz)')
+                         + '-' + re.escape(devices.target_name(target).replace('/', '-')) + r'\.Linux-x86_64\.tar\.(?:zst|xz)')
     matches = []
     for line in text.splitlines():
         parts = line.split()
@@ -285,7 +289,7 @@ def package_selection(preset, docker, proxy, extra_packages, firewall='nftables'
     return list(dict.fromkeys(packages + extra_packages.split()))
 
 
-def write_defaults(overlay, lan_ip, proxy):
+def write_defaults(overlay, lan_ip, proxy, policy=None):
     defaults = overlay / 'etc/uci-defaults/99-firmware-builder'
     defaults.parent.mkdir(parents=True, exist_ok=True)
     lines = ['#!/bin/sh', 'set -e']
@@ -297,6 +301,8 @@ def write_defaults(overlay, lan_ip, proxy):
         lines += [f"uci set {proxy}.config.enabled='0'" if proxy == 'nikki'
                   else "uci set openclash.config.enable='0'", f'uci commit {proxy}',
                   f'/etc/init.d/{proxy} disable']
+    if policy:
+        lines += devices.network_commands(policy)
     lines += ['exit 0', '']
     defaults.write_text('\n'.join(lines))
     defaults.chmod(0o755)
@@ -315,7 +321,7 @@ def fetch_locked(entry, workspace):
     return path
 
 
-def latest_release_asset(repository, pattern):
+def latest_release_asset(repository, pattern, asset_arch=None):
     if repository not in ('vernesong/OpenClash', 'MetaCubeX/mihomo'):
         raise ValueError('不允许的插件上游仓库')
     api = f'https://api.github.com/repos/{repository}/releases/latest'
@@ -337,7 +343,7 @@ def latest_release_asset(repository, pattern):
         expected = (f'luci-app-openclash-{tag[1:]}.apk' if asset['name'].endswith('.apk')
                     else f'luci-app-openclash_{tag[1:]}_all.ipk')
     else:
-        expected = f'mihomo-linux-amd64-v1-{tag}.gz'
+        expected = f"mihomo-linux-{asset_arch or 'amd64-v1'}-{tag}.gz"
     if asset['name'] != expected:
         raise ValueError('上游资产文件名与正式版本标签不一致')
     digest = asset.get('digest') or ''
@@ -363,12 +369,12 @@ def preserve_current_license(entry, workspace, overlay):
     entry['license'] = dict(url=url, sha256=sha256(path))
 
 
-def prepare_plugin(builder, workspace, overlay, version, proxy, manager):
+def prepare_plugin(builder, workspace, overlay, version, proxy, manager, arch='x86_64'):
     if proxy == 'none':
         return []
     lock = json.loads((Path(__file__).resolve().parents[1] / 'configs/plugins.lock.json').read_text())
     if proxy == 'nikki':
-        return prepare_nikki_feed(builder, workspace, overlay, version, manager, lock['nikki'])
+        return prepare_nikki_feed(builder, workspace, overlay, version, manager, lock['nikki'], arch)
     records, packages = [], []
     if proxy == 'openclash':
         entry = latest_release_asset(lock[proxy]['repository'],
@@ -377,8 +383,9 @@ def prepare_plugin(builder, workspace, overlay, version, proxy, manager):
         packages.append(fetch_locked(entry, workspace))
         preserve_current_license(entry, workspace, overlay)
         records.append(entry)
+        asset_arch, elf_class, elf_endian, elf_machine = devices.core_arch(arch)
         core_entry = latest_release_asset(lock[proxy]['core_repository'],
-                                         r'mihomo-linux-amd64-v1-v[0-9.]+\.gz')
+                    r'mihomo-linux-' + re.escape(asset_arch) + r'-v[0-9.]+\.gz', asset_arch)
         core_archive = fetch_locked(core_entry, workspace)
         preserve_current_license(core_entry, workspace, overlay)
         core = overlay / 'etc/openclash/core/clash_meta'
@@ -386,9 +393,10 @@ def prepare_plugin(builder, workspace, overlay, version, proxy, manager):
         with gzip.open(core_archive, 'rb') as source, core.open('wb') as dest:
             shutil.copyfileobj(source, dest)
         header = core.read_bytes()[:20]
-        if (len(header) != 20 or header[:6] != b'\x7fELF\x02\x01'
-                or struct.unpack_from('<H', header, 18)[0] != 62):
-            raise ValueError('OpenClash 核心不是 x86-64 ELF 可执行文件')
+        if (len(header) != 20 or header[:4] != b'\x7fELF'
+                or header[4:6] != bytes((elf_class, elf_endian))
+                or struct.unpack_from('<H' if elf_endian == 1 else '>H', header, 18)[0] != elf_machine):
+            raise ValueError('OpenClash 核心 ELF 与目标架构/字节序不匹配')
         core.chmod(0o755)
         records.append(core_entry)
     for package in packages:
@@ -405,11 +413,11 @@ def prepare_plugin(builder, workspace, overlay, version, proxy, manager):
     return records
 
 
-def prepare_nikki_feed(builder, workspace, overlay, version, manager, feed):
+def prepare_nikki_feed(builder, workspace, overlay, version, manager, feed, arch='x86_64'):
     branch = '.'.join(version.split('.')[:2])
     if branch not in feed['branches']:
         raise ValueError('Nikki 上游源不支持当前版本')
-    url = f"{feed['base_url']}/openwrt-{branch}/x86_64/nikki"
+    url = f"{feed['base_url']}/openwrt-{branch}/{arch}/nikki"
     key_info = feed['keys'][manager]
     key = workspace / ('nikki.pub' if manager == 'opkg' else 'nikki.pem')
     download(key_info['url'], key, allowed_hosts={'nikkinikki.pages.dev'})
@@ -438,6 +446,33 @@ def prepare_nikki_feed(builder, workspace, overlay, version, manager, feed):
                  version_policy='latest-compatible-feed',
                  feed_url=url, key=key_info, source_ref=feed['source_ref'],
                  documentation=feed['documentation'])]
+
+
+def prepare_istore(builder, workspace, overlay, manager, arch):
+    if manager != 'apk' or not (arch == 'x86_64' or arch.startswith('aarch64_')):
+        raise ValueError('iStore 仅开放经过签名源校验的 APK x86_64/arm64 组合')
+    settings = json.loads((Path(__file__).resolve().parents[1] / 'configs/plugins.lock.json').read_text())['istore']
+    key = workspace / 'istore.pem'
+    download(settings['key']['url'], key, allowed_hosts={'istore.istoreos.com'})
+    verify(key, settings['key']['sha256'])
+    shutil.copy2(key, builder / 'keys/istore.pem')
+    runtime_key = overlay / 'etc/apk/keys/istore.pem'
+    runtime_key.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(key, runtime_key)
+    source = '\n'.join(settings['repositories']) + '\n'
+    with (builder / 'repositories').open('a') as stream:
+        stream.write('\n' + source)
+    runtime = overlay / 'etc/apk/repositories.d/istore.list'
+    runtime.parent.mkdir(parents=True, exist_ok=True)
+    runtime.write_text(source)
+    with urllib.request.urlopen('https://api.github.com/repos/istoreos/istore/branches/main', timeout=60) as response:
+        revision = json.load(response)['commit']['sha']
+    if not re.fullmatch(r'[0-9a-f]{40}', revision):
+        raise ValueError('iStore 源码修订不合法')
+    record = dict(repository='istoreos/istore', release=revision, installation='signed-upstream-feed',
+                  source_url='https://github.com/istoreos/istore/tree/' + revision, repositories=settings['repositories'])
+    preserve_current_license(record, workspace, overlay)
+    return [record]
 
 
 def install_notices(overlay):
@@ -469,7 +504,7 @@ def access_notes(info):
     ip = info['lan_ip']
     web = f'https://{ip}/' if info['luci'] else '未预装 LuCI 网页管理界面（minimal 基础系统）'
     return (f"# OpenWrt {info['version']} 使用说明\n\n"
-            f"- 目标：x86-64 / generic\n- 管理 IPv4：**{ip}**\n"
+            f"- 目标：{info.get('target', 'x86/64')} / {info.get('profile', 'generic')}\n- 管理 IPv4：**{ip}**\n"
             f"- LAN 掩码：255.255.255.0（/24）\n- 网页管理：{web}\n"
             f"- SSH：`ssh root@{ip}`\n- 用户名：**root**\n"
             '- 初始密码：**未设置（空密码）**；全新刷写后首次登录请自行设置密码。\n'
@@ -479,15 +514,17 @@ def access_notes(info):
             f"- 简体中文：{'LuCI 及所选管理插件中文资源已包含' if info['luci'] else '无网页界面，不追加 LuCI 语言包'}\n"
             f"- Docker：{'已预装' if info['docker'] else '未选择'}\n"
             f"- 代理：{info['proxy']}（如已选择，首次启动保持关闭，导入自己的配置后再启用）\n\n"
-            + ''.join(f'- 代理组件版本：{name} = {value}\n'
+            + f"- 路由与 DHCP：{info.get('network_policy', {})}\n- iStore：{info.get('istore', False)}\n"
+            + ''.join(f'- 组件版本：{name} = {value}\n'
                       for name, value in sorted(info.get('proxy_versions', {}).items())) + '\n'
             '先在隔离虚拟机验收。不要与现有路由器在同一网段同时提供 DHCP。\n')
 
 
-def build(version, target, size, preset, lan_ip='', docker=False, proxy='none', extra_packages=''):
+def build(version, target, size, preset, lan_ip='', docker=False, proxy='none', extra_packages='',
+          profile='generic', mode='main', gateway='', dns='', istore=False):
     validate(version, target, size, preset)
     validate_features(lan_ip, docker, proxy, extra_packages)
-    if (docker or proxy != 'none') and size < 512:
+    if (docker or proxy != 'none' or istore) and size and size < 512:
         raise ValueError('启用 Docker 或代理插件时根分区至少 512 MiB')
     workspace, dist = Path('work'), Path('dist')
     if workspace.exists() or dist.exists():
@@ -496,52 +533,70 @@ def build(version, target, size, preset, lan_ip='', docker=False, proxy='none', 
     catalog = official_catalog()
     version = resolve_release(requested, catalog)
     plugin_support(version, proxy)
-    print(f'官方版本解析：{requested} -> {version}；最新三代：{latest_three(catalog)}', flush=True)
+    target = devices.target_name(target)
+    device_data, selected = devices.profile_data(version, target, profile)
+    disk = devices.feature_policy(target, device_data, selected, size, docker, proxy, istore)
+    if disk and not size:
+        size = 1024
+    arch = device_data['arch_packages']
+    print(f'官方版本解析：{requested} -> {version}；最新两代：{latest_two(catalog)}', flush=True)
     lan_ip = lan_ip or '192.168.1.1'
+    policy = devices.network_policy(mode, lan_ip, gateway, dns)
     workspace.mkdir()
     workspace = workspace.resolve()
     overlay = workspace / 'files'
-    defaults = write_defaults(overlay, lan_ip, proxy)
+    defaults = write_defaults(overlay, lan_ip, proxy, policy)
     install_notices(overlay)
-    base = f'https://downloads.openwrt.org/releases/{version}/targets/x86/64/'
+    base = f'https://downloads.openwrt.org/releases/{version}/targets/{target}/'
     checksums = workspace / 'sha256sums'
     download(base + 'sha256sums', checksums)
-    name, digest = select_archive(checksums.read_text(), version)
+    name, digest = select_archive(checksums.read_text(), version, target)
     archive = workspace / name
     download(base + name, archive)
     verify(archive, digest)
     builder = extract(archive, workspace)
     config = (builder / '.config').read_text()
+    if f'CONFIG_TARGET_ARCH_PACKAGES="{arch}"' not in config.splitlines():
+        raise ValueError('ImageBuilder 软件包架构与官方设备元数据不匹配')
     manager, firewall = detect_runtime(config)
     if 'CONFIG_SIGNATURE_CHECK=y' not in config.splitlines():
         raise ValueError('ImageBuilder 未开启软件源签名检查，停止构建')
     if proxy == 'nikki' and firewall != 'nftables':
         raise ValueError('Nikki 仅支持 fw4/nftables')
     # ImageBuilder clears MAKEFLAGS in recursive invocations: persist the setting.
-    (builder / '.config').write_text(configure_rootfs(config, size))
+    if size:
+        (builder / '.config').write_text(configure_rootfs(config, size))
     print(f'官方 ImageBuilder：{name}；包管理器：{manager}', flush=True)
-    plugins = prepare_plugin(builder, workspace, overlay, version, proxy, manager)
+    plugins = prepare_plugin(builder, workspace, overlay, version, proxy, manager, arch)
     packages = package_selection(preset, docker, proxy, extra_packages, firewall)
+    if istore:
+        plugins += prepare_istore(builder, workspace, overlay, manager, arch)
+        packages += ['luci-app-store', 'luci-compat', 'luci-ssl', 'luci-i18n-base-zh-cn']
     # Keep official repositories, signing keys and default device packages intact.
     run(['make', 'info'], builder)
-    args = ['make', 'image', 'PROFILE=generic', 'PACKAGES=' + ' '.join(packages),
+    args = ['make', 'image', 'PROFILE=' + profile, 'PACKAGES=' + ' '.join(packages),
             f'FILES={overlay}']
     if proxy != 'none':
         args.append(f'DISABLED_SERVICES={proxy}')
     run(args, builder)
-    output = builder / 'bin/targets/x86/64'
-    images, manifests = validate_outputs(output, version, size)
+    output = builder / 'bin/targets' / target
+    images, manifests = (validate_outputs(output, version, size) if target == 'x86/64' and profile == 'generic'
+                         else devices.check_outputs(output, selected))
     installed = verify_installed(manifests, [p for p in packages if not p.startswith('-')])
     verify_installed(manifests, ['firewall4' if firewall == 'nftables' else 'firewall'])
     if proxy == 'openclash':
         check_openclash_language(builder)
+    if istore:
+        translations = list((builder / 'build_dir').glob('target-*/root-*/usr/lib/lua/luci/i18n/iStore.zh-cn.lmo'))
+        if not any(p.stat().st_size for p in translations):
+            raise ValueError('iStore 缺少简体中文资源')
     # Publish only after all checks pass.
     dist.mkdir()
     for path in images + manifests:
         shutil.copy2(path, dist / path.name)
-    proxy_names = {'luci-app-openclash', 'nikki', 'luci-app-nikki', 'mihomo-meta', 'luci-i18n-nikki-zh-cn'}
+    proxy_names = {'luci-app-openclash', 'nikki', 'luci-app-nikki', 'mihomo-meta', 'luci-i18n-nikki-zh-cn', 'luci-app-store', 'taskd', 'luci-lib-taskd', 'luci-lib-xterm'}
     proxy_versions = {}
-    if proxy != 'none':
+    if proxy != 'none' or istore:
         for manifest in manifests:
             for line in manifest.read_text().splitlines():
                 fields = line.split()
@@ -551,14 +606,16 @@ def build(version, target, size, preset, lan_ip='', docker=False, proxy='none', 
             raise ValueError('无法记录代理插件实际安装版本')
         if proxy == 'openclash':
             proxy_versions['mihomo-core'] = plugins[1]['release']
-    metadata = dict(builder_version='2.3.0', version=version, version_requested=requested,
-                    version_source=VERSION_SOURCE, target=target, profile='generic', rootfs_mib=size,
+    metadata = dict(builder_version='3.0.0', version=version, version_requested=requested,
+                    version_source=VERSION_SOURCE, target=target, profile=profile, rootfs_mib=size or None, arch_packages=arch,
+                    network_policy=policy, istore=istore, disk_layout=disk,
                     preset=preset, packages=packages, lan_ip=lan_ip, username='root', password_state='unset',
                     luci=('luci-ssl' in installed), docker=docker, proxy=proxy, plugins=plugins,
                     proxy_versions=proxy_versions,
                     package_manager=manager, firewall=firewall,
                     imagebuilder_url=base + name, imagebuilder_sha256=digest,
                     github_sha=os.getenv('GITHUB_SHA'), run_id=os.getenv('GITHUB_RUN_ID'))
+    (dist / 'device-profile.json').write_text(json.dumps(device_data, indent=2) + '\n')
     (dist / 'build-info.json').write_text(json.dumps(metadata, indent=2) + '\n')
     shutil.copy2(checksums, dist / 'imagebuilder-sha256sums.txt')
     shutil.copy2(defaults, dist / 'uci-defaults.txt')
@@ -593,21 +650,30 @@ def main():
     parser.add_argument('--validate-only', action='store_true')
     args = parser.parse_args()
     values = (os.environ['OPENWRT_VERSION'], os.environ['OPENWRT_TARGET'],
-              int(os.environ['ROOTFS_MB']), os.environ['PRESET'])
+              (0 if os.environ['ROOTFS_MB'] == 'auto' else int(os.environ['ROOTFS_MB'])), os.environ['PRESET'])
     docker_raw = os.getenv('DOCKER', 'false')
     if docker_raw not in ('true', 'false'):
         raise ValueError('DOCKER 必须为 true 或 false')
     features = (os.getenv('LAN_IP', '').strip(), docker_raw == 'true',
                 os.getenv('PROXY', 'none'), os.getenv('EXTRA_PACKAGES', '').strip())
+    istore_raw = os.getenv('ISTORE', 'false')
+    if istore_raw not in ('true', 'false'):
+        raise ValueError('ISTORE 必须为 true 或 false')
+    istore = istore_raw == 'true'
+    extra = dict(profile=os.getenv('PROFILE', 'generic'), mode=os.getenv('ROUTER_MODE', 'main'),
+                 gateway=os.getenv('UPSTREAM_GATEWAY', '').strip(), dns=os.getenv('UPSTREAM_DNS', '').strip(), istore=istore)
     validate(*values)
     validate_features(*features)
-    if (features[1] or features[2] != 'none') and values[2] < 512:
+    devices.network_policy(extra['mode'], features[0] or '192.168.1.1', extra['gateway'], extra['dns'])
+    if (features[1] or features[2] != 'none' or istore) and values[2] and values[2] < 512:
         raise ValueError('启用 Docker 或代理插件时根分区至少 512 MiB')
     if not args.validate_only:
-        build(*values, *features)
+        build(*values, *features, **extra)
     else:
         resolved = resolve_release(values[0], official_catalog())
         plugin_support(resolved, features[2])
+        data, selected = devices.profile_data(resolved, values[1], extra['profile'])
+        devices.feature_policy(devices.target_name(values[1]), data, selected, values[2], features[1], features[2], istore)
         print(f'参数校验通过，官网解析版本：{resolved}')
 
 

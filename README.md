@@ -1,130 +1,73 @@
-# OpenWrt Firmware Builder V2.3
+# OpenWrt Firmware Builder V3.0
 
-在 GitHub Actions 中选择版本、分区、管理 IP、Docker 和代理插件，使用**官方 OpenWrt ImageBuilder**组装 x86-64 固件。保留官方内核及软件源；每次构建获取兼容来源的最新代理组件。平台暂只支持 x86-64。
+使用官方 OpenWrt ImageBuilder，在 GitHub Actions 定制固件。设备入口支持官方发布元数据列出的 target/subtarget 和设备 Profile，不再固定 x86；缺少 ImageBuilder、匹配包、资源或预期镜像时明确失败，不混装、不静默省略功能。入口覆盖不等于全部设备已经过实机验收。
 
-## 使用方法
+## 找设备与构建
 
-打开仓库 **Actions → Build OpenWrt → Run workflow**，选择参数后运行。首次使用推荐菜单默认的最新正式版本、`1024 / standard`，其他功能按需开启。运行摘要、Artifact 的 `ACCESS.md` 和 Release 正文都会列出实际版本、管理地址及初始登录说明。
+1. **Actions → Discover official devices → Run workflow**。输入完整正式版本，或 `latest` / `previous`；检索词留空导出全部设备，也可按品牌、型号或架构筛选。下载 `official-devices` CSV，复制对应 `target`、`profile` 两列。
+2. **Actions → Build OpenWrt → Run workflow**。选择同一版本，填写目标与 Profile；默认 `x86/64`、`generic`，ARM64 通用 EFI 示例为 `armsr/armv8`、`generic`。不要拿相似型号或不同硬件修订替代。
+3. 成功后下载 Artifacts；勾选 publish_release 则在完整性和适用执行检查后发布 Release。镜像类型、接线与刷写步骤以所选设备官方说明为准，没有通用刷写命令。
+
+[官方 Firmware Selector](https://firmware-selector.openwrt.org/) · [软件包填写示例](docs/PACKAGES.md) · [完整版本菜单](docs/VERSIONS.md)
+
+## 参数
 
 | 参数 | 含义 |
 | --- | --- |
-| version | 官网最新三代的全部正式小版本，直接选择完整版本号；[完整版本清单](docs/VERSIONS.md)，刷新方法见下文 |
-| target | 仅 `x86-64`，对应官方目标 `x86/64` 和 Profile `generic` |
-| rootfs_mb | 256 / 512 / 1024 / 2048 / 4096 MiB；Docker 或代理至少 512 MiB，推荐 1024 以上 |
-| preset | `minimal`=官方基础包；`standard`=基础包追加 LuCI HTTPS、基础简体中文、curl、证书，推荐普通用户选择 |
-| lan_ip | 留空使用 `192.168.1.1`；或填写私网 IPv4，例如 `192.168.31.100`，固定 /24；下载前校验 |
-| docker | Docker + 中文 Dockerman + 中文 LuCI HTTPS，默认关闭 |
-| proxy | `none` / `openclash` / `nikki`，互斥；Nikki 作者源目前支持 24.10/25.12，23.05 选择 Nikki 会提前拒绝 |
-| extra_packages | 可留空；常用包名、用途和复制示例见 [软件包速查](docs/PACKAGES.md)；最多 64 个，只允许添加包 |
-| publish_release | 默认关闭；开启后在构建和上传成功后发布独立 GitHub Release |
+| version | 官网最新两代大版本的全部正式小版本，排除 RC/SNAPSHOT |
+| target / profile | 官方目标与设备 ID；必须存在于所选版本的官方元数据 |
+| rootfs_mb | 固定闪存设备必须 auto，保留官方布局；具有 ext4 磁盘镜像的设备可选 MiB 大小，auto 使用 1024 MiB |
+| preset | minimal 保留官方基础包；standard 追加 LuCI HTTPS、基础简体中文、curl、证书 |
+| lan_ip | 默认 192.168.1.1，私网 IPv4 主机地址，固定 /24；验证格式、网络/广播地址及 Docker 默认网段冲突 |
+| router_mode | main 主路由开启 LAN IPv4 DHCP；bypass 旁路由关闭 LAN DHCPv4、RA、DHCPv6、NDP |
+| upstream_gateway / upstream_dns | 旁路由必填：网关为同一 /24 网段另一主机，DNS 以空格分隔；主路由模式留空，保留官方 WAN 配置 |
+| docker | 可选 Docker、Dockerman 及中文包；目前仅开放具有官方 ext4 磁盘镜像的 x86_64/arm64，仍须满足实际源与内核依赖 |
+| proxy | none / openclash / nikki，互斥；根据实际分支、包管理器、防火墙和 CPU 架构匹配 |
+| istore | 默认关闭；目前仅集成 25.12 APK x86_64/arm64 作者签名源，包含中文；不是安装 iStoreOS |
+| extra_packages | 追加官方包名，以空格分隔；不接受命令或移除语法 |
+| publish_release | 默认关闭；通过构建、检查、上传后才公开，不覆盖旧标签 |
 
-这些预设都是“追加包”，不会裁剪官方基础系统。`minimal` 本身不额外安装网页界面；开启 Docker、代理或手动追加 LuCI 组件时，会补齐 LuCI HTTPS 和基础中文。Docker 带 `luci-i18n-dockerman-zh-cn`；Nikki 带 `luci-i18n-nikki-zh-cn`；OpenClash 的简体中文资源随上游包提供，构建会检查其存在。语言显示遵循浏览器/LuCI 自动语言设置。
+选择 Docker、代理或 iStore 时补齐 LuCI HTTPS 和基础中文。Docker/Nikki 带专用中文包，OpenClash/iStore 检查包内简体中文资源。磁盘功能组合至少 512 MiB；容器数据应规划更充足的存储。固定闪存容量由设备构建规则限制，不能通过扩大分区绕过物理容量。
 
-开启代理时自动补充相应防火墙后端的透明代理依赖和 `dnsmasq-full`，移除精简版 `dnsmasq`。包依赖由当前版本 ImageBuilder 解析，缺包或冲突会失败。
+## 路由模式与登录
 
-成功后在运行页面 **Artifacts** 下载固件，保留 14 天。开启 Release 发布时，还可在仓库 **Releases** 下载。固件包包含 BIOS/EFI 两种引导、ext4/squashfs 两种文件系统，共四个完整磁盘镜像。
+两种模式修改已有 network.lan / dhcp.lan，不假设 eth0/eth1，不重划 DSA、交换机或无线拓扑。设备须有官方 LAN 配置；没有 LAN 的设备需要专门适配。
 
-管理 IP 只改变 LAN 的 IPv4 地址和 /24 掩码，不自动配置旁路由网关、DNS、WAN 或关闭 DHCP。它是通用路由固件定制，不是完整的旁路由配置向导。不要让新测试虚拟机与家庭主路由同时在同一 LAN 提供 DHCP。
+主路由开启 LAN IPv4 DHCP，保留官方 WAN 和 IPv6 默认行为。旁路由设置管理地址、网关和 DNS，关闭 LAN DHCPv4 与 RA/DHCPv6/NDP；**不停止整个 dnsmasq**，保留 DNS/代理依赖。不会更改其他设备网关，也不会自动接管全网流量。接线、主路由 DHCP 分配策略与终端路由需按实际拓扑设置。
 
-GitHub 原生输入框不能实时做自定义地址校验；工作流启动后、下载工具前，会拒绝错误格式、IPv6、网址、带端口/掩码的输入、公网/回环地址，以及 /24 中 `.0`、`.255`。开启 Docker 时还会拒绝其默认 `172.17.0.0/16` 网段。校验不能检测你真实网络中是否已有设备占用这个地址。
+全新刷写用户名 **root**，初始密码**未设置**，首次登录自行设置。Release、运行摘要及 ACCESS.md 显示管理地址、模式、DHCP 状态、上游设置和实际组件版本。保留旧配置升级时，以继承的地址、密码和服务设置为准。
 
-全新写入固件的初始用户名为 **root**，密码**未设置（空密码）**；首次登录后自行设置。项目不放入共享默认密码，也不会把个人密码发布到 Release。保留旧配置升级时，地址和密码以原配置为准。登录依据见 [官方初次登录说明](https://openwrt.org/docs/guide-quick-start/walkthrough_login)。
+## 最新组件与兼容性
 
-代理插件和核心已预装，但首次启动保持关闭。进入 LuCI 导入自己的配置/订阅，检查网络和 DNS 后再启用。项目不接收订阅密钥，不把订阅或密码放入 Actions 参数、日志和公开 Release。OpenClash 的规则数据库、面板等运行数据按其配置在使用时获取。
+- OpenClash 每次解析作者最新正式 Release，按实际 IPK/APK 选包。Mihomo 选择实际 CPU 的保守 ISA 变体，检查 ELF 类别、字节序和机器类型。未知架构、不唯一匹配或没有上游 SHA256 时失败，不回退旧版或 amd64。
+- Nikki 从对应 OpenWrt 分支和 arch_packages 的作者签名源安装最新可用包，保留源与公钥。缺源、依赖不满足会失败；核心随该源配套，不混装其他项目的独立核心。
+- iStore 验证固定公钥哈希，再由 APK 校验作者源签名，保留官方源。不执行网络安装器、不降低全局签名检查。尚未开放 opkg 路径，因为上游 is-opkg 会在其临时配置中剥除签名检查。iStore 自身后续安装器与应用由上游维护，应用列表不代表逐项兼容全部设备，见 [上游说明](https://github.com/istoreos/istore)。
+- Docker 只从所选官方版本的软件源解析组件及内核依赖。构建成功不等于内存、容器驱动、数据盘与实际工作负载均已验收。
 
-Docker 的镜像、容器数据同样占用磁盘；512 MiB 只是构建门槛。生产使用应规划较大数据盘，并在运行系统中配置 Docker 数据目录。
+每次构建使用干净目录重新解析组件，记录确切 URL、版本与哈希。仅重试 Release 上传不会更新已构建的软件；需要最新组件时重新运行完整构建。
 
-4096 MiB 根分区会增加构建临时空间需求，Runner 磁盘不足时构建会失败；这种情况应减少分区大小或使用磁盘更大的 Runner，而不是跳过产物检查。
+## 官方版本与设备目录
 
-## 官方版本与包管理器
+版本源为 [官方 .versions.json](https://downloads.openwrt.org/.versions.json)，保留最新两个实际存在的年号大版本，不假设年份连续。当前 25.12.0–25.12.6、24.10.0–24.10.8，共 16 项。
 
-版本源为官方 Firmware Selector 使用的发布站数据：[`.versions.json`](https://downloads.openwrt.org/.versions.json)。排除 SNAPSHOT/RC，按实际存在的年号大版本排序，只保留最新三代的**全部正式小版本**；不假设年号连续，也不猜测下载目录。当前菜单共 23 项：25.12.0–25.12.6、24.10.0–24.10.8、23.05.0–23.05.6。
+GitHub 原生输入不能实时联动官网。运行 Refresh version menu，下载 official-version-menu，将三个同路径文件提交到默认分支才更新菜单；此工作流只读仓库。也可执行 `python3 scripts/sync_versions.py` 后提交。构建仍实时验证范围，过期选择被拒绝。
 
-GitHub 原生下拉菜单不能打开时请求官网。菜单由 `scripts/sync_versions.py` 生成；运行 **Actions → Refresh version menu** 后，下载 `official-version-menu` Artifact，将其中三个同路径文件提交到默认分支才会更新菜单。也可在项目根目录执行 `python3 scripts/sync_versions.py` 后提交。刷新工作流只有读取权限，不会自动写仓库。构建时仍重新请求官网验证所选版本属于当前三代；旧菜单若尚未刷新，过期选择会明确失败。官网不可用或结构异常时失败。
+Discover 工作流遍历官方目标目录及所有子目标 profiles.json，任一请求失败就失败，不拿不完整结果冒充全集。各小版本支持设备可能不同，应按实际版本查询。构建前再次核对目标、Profile、架构和镜像类型。
 
-截至 2026-10-28 的解析结果：
+## 校验、模拟器与产物
 
-| 选择 | 实际版本 | 包管理器 | 防火墙 | 官方目录 |
-| --- | --- | --- | --- | --- |
-| 最新大版本 | 25.12.6 | apk / APK | fw4 / nftables | [x86/64](https://downloads.openwrt.org/releases/25.12.6/targets/x86/64/) |
-| 上一大版本 | 24.10.8 | opkg / IPK | fw4 / nftables | [x86/64](https://downloads.openwrt.org/releases/24.10.8/targets/x86/64/) |
-| 上两个大版本 | 23.05.6 | opkg / IPK | fw4 / nftables | [x86/64](https://downloads.openwrt.org/releases/23.05.6/targets/x86/64/) |
+从所选目标 sha256sums 唯一解析官方 ImageBuilder，支持 tar.xz/tar.zst，经 HTTPS 下载并校验 SHA256。当前未独立验证官方清单 GPG/usign 签名；软件源签名检查保持开启。
 
-上表仅列各代最新补丁，完整选项见 [版本清单](docs/VERSIONS.md)。新大版本正式发布后须刷新并提交菜单。实际管理器和防火墙读取 ImageBuilder `.config`，并结合安装清单核对，而不是按年号硬猜。fw3/iptables 与 fw4/nftables 的 OpenClash 依赖分开选择，Nikki 要求 fw4。新版本缺少第三方兼容源时会明确拒绝，不拿旧版本的包混装。
+x86 generic 检查 BIOS/EFI、ext4/squashfs 四种整盘镜像的 gzip、MBR/GPT、根分区大小与镜像长度。其他设备按官方 Profile 的预期文件和 ImageBuilder 生成的校验清单验证，不套用 x86 磁盘规则。容量由设备构建规则约束；不宣称已对所有硬件格式逐一逆向解析。
 
-保留三代构建入口不等于这三代都仍获得安全维护。23.05 已经 EOL；请查看 [官方维护状态](https://openwrt.org/docs/guide-developer/security)，生产使用优先选择仍受支持的版本。项目不能承诺上游或第三方组件没有漏洞。
+x86/64/generic 使用隔离 QEMU BIOS 启动；armsr/armv8/generic 使用 QEMU virt + ARM64 EFI。其他板级内核不能假装在通用虚拟板启动，仅记录镜像校验及可用的跨架构核心/CLI 检查，不算板级启动或 DHCP/流量测试。实际端口、无线、启动链、闪存与代理/容器流量需在隔离硬件环境验收。失败不发布固件，保存 build.log/smoke.log。
 
-下载流程先获取所选版本官方 `sha256sums`，严格匹配唯一 ImageBuilder 文件名（支持 `.tar.zst` / `.tar.xz`），再下载并验证 SHA256。目录不存在、清单缺项、哈希不符时失败，不自动回退其他版本。清单通过官方 HTTPS 获取；目前没有独立验证其 GPG/usign 签名。
+verify.yml 中 **192.168.77.1 是一次性隔离 CI 固件的合成管理地址**，192.168.77.254 是旁路由测试的合成网关/DNS，不属于部署设备。QEMU 使用受限用户网络与快照，不连接生产网络。CI 覆盖两代 x86、ARM64 和固定闪存 MIPS 代表目标，不宣称官网全部设备均完成实机验收。
 
-安全解压保留路径越界检查；官方归档中指向构建服务器的少量宿主工具链接，在解压后绑定到 Runner 本地工具或归档内脚本。解压后读取 `.config` 核对包管理器，并在其中持久化 `CONFIG_TARGET_ROOTFS_PARTSIZE`。不将 MiB 数值错误地传给内部以字节计算的 `ROOTFS_PARTSIZE`。
+Artifacts 保留 14 天，CI 产物保留 7 天。内容包含镜像、manifest、build-info.json、device-profile.json、ACCESS.md、官方版本快照、校验清单、注入脚本和第三方来源/许可证。`sha256sum -c SHA256SUMS` 可复核下载内容。Release 先草稿，所有资产上传后才公开。
 
-## 第三方插件来源与升级
+## 开发与来源
 
-`configs/plugins.lock.json` 保存上游来源策略，以及 Nikki 作者源、公钥哈希和安装文档修订。每次构建独立查询当前版本，不复用上次构建的插件包，也不执行第三方在线安装脚本。具体安装方式与升级说明见 [PLUGIN-UPDATES.md](docs/PLUGIN-UPDATES.md)。
+在项目根目录运行 `python3 -m unittest discover -s tests -v`。需要 Python 3.12+ 和 Linux x86-64 构建宿主。设备/网络策略在 scripts/devices.py，设备目录导出在 scripts/discover_devices.py，其余入口见 scripts/ 和 .github/workflows/。证据与限制见 [VALIDATION.md](VALIDATION.md)。
 
-| 组件 | 每次构建的版本策略 | 来源 |
-| --- | --- | --- |
-| OpenClash | 上游最新正式 Release，按包管理器选 IPK/APK | [vernesong/OpenClash](https://github.com/vernesong/OpenClash/releases/latest) |
-| OpenClash Mihomo 核心 | 上游最新正式 Release，选择通用 amd64-v1 | [MetaCubeX/mihomo](https://github.com/MetaCubeX/mihomo/releases/latest) |
-| Nikki（含 mihomo-meta） | 作者签名软件源的兼容版本，实际包版本记录于 manifest | [作者推荐安装方法](https://github.com/nikkinikki-org/OpenWrt-nikki/blob/main/README.zh.md) |
-
-Nikki 按作者 `feed.sh` 的方法配置签名软件源：24.10 使用 opkg，25.12 使用 apk；公钥哈希先校验，再由 ImageBuilder 验证软件源签名。源地址与公钥保留在固件中，后续可按作者文档升级。它是 Nikki 作者维护的第三方源，不是 OpenWrt 官方源；该源滚动更新，实际安装版本以 manifest 为准。
-
-OpenClash 通过 GitHub `releases/latest` API 获取最新正式版本（不接受草稿、预发布或测试核心），先解析成确切版本的下载 URL 和上游资产 SHA256，再下载验证。缺少对应包格式、通用 amd64-v1 核心或上游 SHA256 时直接失败，不回退旧版、不替换其他架构。IPK 放入本地包目录；APK 验证上游哈希后用临时密钥签名。官方源签名检查保持启用，私钥不会加入固件或产物。相应标签的许可证原文一并下载保留。
-
-软件包依赖由所选官方 ImageBuilder 检查，缺依赖或冲突会失败。这不能保证未来任意上游版本都兼容，构建检查也不替代实际代理流量测试。Nikki 使用分支软件源的最新可用兼容包，其核心可能比 Mihomo GitHub 最新版稍晚；不强行混装 OpenClash 的核心。版本在构建开始时解析，构建过程中上游再发布新版不会改变本次已选资产。
-
-手动构建选择代理时，在上传固件和发布 Release 前额外进行隔离 QEMU 启动检查，验证核心可执行、管理地址及代理默认关闭；Nikki 同时检查源配置保留。失败时不上传固件、不进入发布任务，保存构建和启动日志。这仍不代表已经验证真实代理订阅与转发流量。
-
-`build-info.json` 的 `proxy_versions`、`.manifest`、`ACCESS.md`、运行摘要与 Release 正文显示实际安装版本。仅重试 Release 上传任务不会重新安装插件；需要新版本时重新运行完整 Build OpenWrt。
-
-构建记录保存本次解析出的下载 URL、版本、哈希、参数和源码提交。每次获取最新版本，因此不同日期不保证产物相同；API 限流、源不可用或校验失败时明确终止。
-
-## 验证和发布
-
-手动工作流执行单元测试、参数验证、依赖安装、构建、镜像检查和产物上传。参数通过环境变量传入；自定义包只允许包名，不直接拼成 shell 命令。
-
-产物检查要求四个非空镜像、正确 gzip CRC、BIOS MBR 或 EFI GPT、实际根分区大小、镜像长度以及非空 manifest；还检查请求安装的包确实出现在 manifest 中。兼容 gzip 后附加的 OpenWrt fwtool 元数据。检查通过后生成：
-
-- 四个 `combined*.img.gz` 整盘镜像。
-- 软件包 `.manifest`。
-- `build-info.json`：输入、工具及插件版本、哈希、源码提交和运行编号。
-- `ACCESS.md`：本次固件的管理 IPv4、网页入口、root 用户名、初始密码状态及保留旧配置时的说明；Release 正文与构建摘要也显示这些内容。
-- `official-versions.json`：本次使用的官方版本数据快照。
-- `uci-defaults.txt`：实际注入的一次性设置脚本，便于审查。
-- `imagebuilder-sha256sums.txt`：官方原始校验清单。
-- `THIRD_PARTY_NOTICES.md`、`LICENSE-*.txt`、`SOURCE-REFERENCES.md`、`PLUGIN-UPDATES.md`：第三方来源、许可证原文、对应版本源码引用和升级说明；固件内也保留第三方说明与许可文件。
-- `SHA256SUMS`：此次产物的校验值，不包含自身。
-
-解压下载的 Artifact 后，Linux 下执行 `sha256sum -c SHA256SUMS`。
-
-`Verify firmware builds` 检查最新三个官方大版本与支持的代理选项（23/Nikki 明确不支持），覆盖三代 Docker，并增加 23.05.0、24.10.0、25.12.0 基础构建，注入测试管理 IP 和额外包。CI 使用隔离 QEMU 快照启动 ext4 BIOS 镜像，检查 LAN IP、网卡、核心、Nikki 源保留和代理关闭状态；Docker 组合还启动 daemon 并等待 `docker info` 成功。测试日志及产物保留 7 天。并未逐一构建全部小版本与功能组合；EFI/squashfs 通过结构检查，尚不等于四种镜像都经过实际启动。
-
-可选 Release 使用单独的发布任务，只有此任务获得仓库写权限。下载本次构建 Artifact 后重新核对文件清单和 SHA256，先建立草稿，全部资产上传成功才公开。标签包含 OpenWrt 版本、运行编号和重试次数，不覆盖旧 Release；发布失败会保留草稿供诊断，Artifact 仍可下载。不需要额外 PAT。
-
-普通手动构建失败时尽力保存 `build.log`；早期失败可能还未产生该文件，请查看 Actions 日志。本地构建拒绝已有 `work/` 和 `dist/`，避免旧产物混入。
-
-## 开发与验收
-
-源码入口和配置：
-
-```text
-.github/workflows/build.yml    手动参数与可选发布
-.github/workflows/verify.yml   三代版本的兼容构建与启动检查
-.github/workflows/refresh-versions.yml 生成官网版本菜单更新文件
-configs/plugins.lock.json     插件上游策略与信任公钥哈希
-scripts/build.py              验证、下载、注入、构建、产物检查
-scripts/smoke.py              隔离 QEMU 启动检查
-scripts/release.py            完整性复核与草稿发布
-scripts/sync_versions.py      从官网生成完整小版本菜单
-tests/                        功能与失败路径测试
-docs/PACKAGES.md               常用官方包名、用途与填写示例
-```
-
-在项目根目录运行 `python3 -m unittest discover -s tests -v`。脚本需要 Python 3.12+，构建宿主为 Linux x86-64；Actions 会安装已列明的依赖。当前验证证据和限制见 [VALIDATION.md](VALIDATION.md)。
-
-源码不包含远程主机或 VM101 凭据，不连接或修改现有 ImmortalWrt。下载的固件应先在新建隔离虚拟机验证；CI 启动测试不能替代 J4125 实际网卡、存储、Docker 容器和代理流量测试。
-
-## 来源与许可
-
-第三方来源、版权和许可说明见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) 与 [licenses/](licenses/)。本仓库自写脚本暂未指定许可证，不能将第三方许可证自动套用于这些脚本。源码链接和鸣谢不等于已经提供全部组件的完整对应源码；再分发固件时仍须履行各组件许可证要求。
+第三方版权和许可见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) 与 licenses/。自写脚本暂未指定许可证，来源引用不是完整对应源码归档。当前公开说明使用通用环境描述；旧提交及既有标签可能保留历史内容，本轮不重写 Git 历史。

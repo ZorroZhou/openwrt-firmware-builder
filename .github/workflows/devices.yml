@@ -1,0 +1,31 @@
+name: Discover official devices
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 完整版本号，或 latest / previous（最新两代）
+        type: string
+        default: latest
+      query:
+        description: 可留空导出全部设备；或填写品牌、型号、架构筛选
+        type: string
+        default: ''
+permissions:
+  contents: read
+jobs:
+  catalog:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Export official targets and device profiles
+        env:
+          VERSION: ${{ inputs.version }}
+          QUERY: ${{ inputs.query }}
+        run: python3 scripts/discover_devices.py --version "$VERSION" --query "$QUERY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: official-devices
+          path: device-catalog/
+          if-no-files-found: error
+          retention-days: 14

@@ -1,6 +1,6 @@
 # 可选择的官方稳定版本
 
-来源：[https://downloads.openwrt.org/.versions.json](https://downloads.openwrt.org/.versions.json)。仅最新三个年号大版本，排除 RC/SNAPSHOT。
+来源：[https://downloads.openwrt.org/.versions.json](https://downloads.openwrt.org/.versions.json)。仅最新两个年号大版本，排除 RC/SNAPSHOT。
 
 - `25.12.6`
 - `25.12.5`
@@ -18,12 +18,5 @@
 - `24.10.2`
 - `24.10.1`
 - `24.10.0`
-- `23.05.6`
-- `23.05.5`
-- `23.05.4`
-- `23.05.3`
-- `23.05.2`
-- `23.05.1`
-- `23.05.0`
 
 菜单由官网数据生成；构建时仍实时验证版本范围和 ImageBuilder 文件。

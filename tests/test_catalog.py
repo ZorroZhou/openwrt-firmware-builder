@@ -12,15 +12,15 @@ class CatalogTests(unittest.TestCase):
     catalog = dict(versions_list=['25.12.0', '25.12.6', '24.10.6', '24.10.8',
                                  '23.05.6', '22.03.7', '26.01.0-rc1', 'SNAPSHOT'])
 
-    def test_official_latest_three_and_numeric_order(self):
-        self.assertEqual(b.latest_three(self.catalog), ['25.12.6', '24.10.8', '23.05.6'])
-        self.assertEqual(b.latest_three(dict(versions_list=self.catalog['versions_list'] + ['25.12.10']))[0], '25.12.10')
-        for key, value in [('最新大版本', '25.12.6'), ('previous', '24.10.8'), ('third', '23.05.6')]:
+    def test_official_latest_two_and_numeric_order(self):
+        self.assertEqual(b.latest_two(self.catalog), ['25.12.6', '24.10.8'])
+        self.assertEqual(b.latest_two(dict(versions_list=self.catalog['versions_list'] + ['25.12.10']))[0], '25.12.10')
+        for key, value in [('最新大版本', '25.12.6'), ('previous', '24.10.8')]:
             self.assertEqual(b.resolve_release(key, self.catalog), value)
 
     def test_next_major_rolls_window_without_guessing_directories(self):
         catalog = dict(versions_list=self.catalog['versions_list'] + ['26.01.0'])
-        self.assertEqual(b.latest_three(catalog), ['26.01.0', '25.12.6', '24.10.8'])
+        self.assertEqual(b.latest_two(catalog), ['26.01.0', '25.12.6'])
         with self.assertRaises(ValueError):
             b.resolve_release('23.05.6', catalog)
         for version in ('22.03.7', '25.12.99', '26.01.0-rc1'):
@@ -29,9 +29,9 @@ class CatalogTests(unittest.TestCase):
 
     def test_malformed_or_incomplete_catalog_fails_closed(self):
         for catalog in ({}, {'versions_list': '25.12.6'}, {'versions_list': ['25.12.6', None]},
-                        {'versions_list': ['25.12.6', '24.10.8']}):
+                        {'versions_list': ['25.12.6']}):
             with self.assertRaises(ValueError):
-                b.latest_three(catalog)
+                b.latest_two(catalog)
 
     def test_detects_package_manager_and_firewall_independently(self):
         self.assertEqual(b.detect_runtime('CONFIG_PACKAGE_opkg=y\nCONFIG_PACKAGE_firewall4=y'), ('opkg', 'nftables'))

@@ -22,5 +22,15 @@
         "sha256": "677ef1af372065e2e856175363e2da9471a6c5c6443563b912c8d325bfa1fbad"
       }
     }
+  },
+  "istore": {
+    "key": {
+      "url": "https://istore.istoreos.com/repo-apk/istore-apk.pem",
+      "sha256": "17d39c124a39a0f0bf54601073ddb3d42bad45b40be9ad28c17e805bee04db08"
+    },
+    "repositories": [
+      "https://istore.istoreos.com/repo-apk/all/store/packages.adb",
+      "https://istore.istoreos.com/repo-apk/all/nas_luci/packages.adb"
+    ]
   }
 }

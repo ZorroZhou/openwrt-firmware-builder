@@ -17,34 +17,53 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        version: [latest, previous, third]
-        proxy: [none, openclash, nikki]
-        exclude:
-          - version: third
-            proxy: nikki
         include:
           - version: latest
-            proxy: none
-            docker: 'true'
+            target: x86/64
+            profile: generic
+            proxy: openclash
           - version: previous
+            target: x86/64
+            profile: generic
             proxy: nikki
             docker: 'true'
-          - version: third
+          - version: latest
+            target: x86/64
+            profile: generic
+            proxy: none
+            istore: 'true'
+            mode: bypass
+          - version: latest
+            target: armsr/armv8
+            profile: generic
+            proxy: openclash
+          - version: previous
+            target: armsr/armv8
+            profile: generic
+            proxy: nikki
+          - version: latest
+            target: armsr/armv8
+            profile: generic
             proxy: none
             docker: 'true'
-          - version: '25.12.0'
+          - version: latest
+            target: ath79/generic
+            profile: tplink_archer-c7-v5
             proxy: none
-          - version: '24.10.0'
-            proxy: none
-          - version: '23.05.0'
-            proxy: none
+            size: auto
     env:
       OPENWRT_VERSION: ${{ matrix.version }}
-      OPENWRT_TARGET: x86-64
-      ROOTFS_MB: '512'
+      OPENWRT_TARGET: ${{ matrix.target }}
+      PROFILE: ${{ matrix.profile }}
+      ROUTER_MODE: ${{ matrix.mode || 'main' }}
+      UPSTREAM_GATEWAY: ${{ matrix.mode == 'bypass' && '192.168.77.254' || '' }}
+      UPSTREAM_DNS: ${{ matrix.mode == 'bypass' && '192.168.77.254' || '' }}
+      ISTORE: ${{ matrix.istore || 'false' }}
+      ROOTFS_MB: ${{ matrix.size || '512' }}
       PRESET: standard
       PROXY: ${{ matrix.proxy }}
       DOCKER: ${{ matrix.docker || 'false' }}
+      # Synthetic address for disposable, isolated CI guests; not a deployed device.
       LAN_IP: '192.168.77.1'
       EXTRA_PACKAGES: 'htop'
     defaults:
@@ -60,15 +79,15 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends build-essential libncurses-dev zlib1g-dev gawk git gettext libssl-dev xsltproc rsync unzip file wget curl python3 zstd xz-utils
-          sudo apt-get install -y --no-install-recommends qemu-system-x86
+          sudo apt-get install -y --no-install-recommends qemu-system-x86 qemu-system-arm qemu-efi-aarch64 qemu-user
       - name: Build and check images
         run: python3 -u scripts/build.py 2>&1 | tee build.log
-      - name: Boot isolated BIOS image and check installed features
+      - name: Validate on the supported emulator; record the coverage scope
         run: python3 -u scripts/smoke.py
       - name: Save verified images
         uses: actions/upload-artifact@v4
         with:
-          name: verified-${{ matrix.version }}-${{ matrix.proxy }}-${{ github.run_id }}-${{ github.run_attempt }}
+          name: verified-${{ strategy.job-index }}-${{ matrix.version }}-${{ matrix.proxy }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: dist/
           if-no-files-found: error
           retention-days: 7
@@ -77,7 +96,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: log-${{ matrix.version }}-${{ matrix.proxy }}-${{ github.run_id }}-${{ github.run_attempt }}
+          name: log-${{ strategy.job-index }}-${{ matrix.version }}-${{ matrix.proxy }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             build.log
             smoke.log

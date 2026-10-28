@@ -22,6 +22,8 @@
 
 ## 保留许可与取得源码
 
+V3.0 新增可选 iStore，来源为 [istoreos/istore](https://github.com/istoreos/istore)，作者 LinkEase 团队及贡献者，仓库采用 [MIT](https://github.com/istoreos/istore/blob/main/LICENSE)。它是软件中心组件，不是将系统替换为 iStoreOS。仅选择该功能时使用作者 APK 签名源；实际源码修订、源地址和许可证哈希记录在 build-info.json，相应修订许可证原文保存在固件与附件的 istore-current-LICENSE.txt。依赖与后续安装的应用继续适用各自许可证，不由 iStore 的 MIT 统一覆盖。
+
 主要许可文本保存在 `licenses/`。固件中也保留于 `/usr/share/firmware-builder/`，构建 Artifact 会随附这些文本、此说明及 `SOURCE-REFERENCES.md`。不删除上游软件自身附带的版权和许可证声明。
 
 本项目生成的是组合固件，不能把整个固件统一标成 MIT 或其他单一许可证。本仓库自写自动化脚本的许可证尚未单独指定；第三方组件继续适用其原许可证。

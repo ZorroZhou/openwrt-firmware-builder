@@ -10,6 +10,40 @@ import time
 import zlib
 
 
+def cross_check(info):
+    # Board-specific kernels cannot all boot on QEMU virt. Never call this a board boot test.
+    import devices
+    from shutil import which
+    cpu = devices.core_arch(info['arch_packages'])[0] if (info['proxy'] != 'none' or info['docker']) else None
+    emulators = {'arm64': 'aarch64', 'armv5': 'arm', '386-softfloat': 'i386',
+                 'mips-softfloat': 'mips', 'mipsle-softfloat': 'mipsel',
+                 'mips64': 'mips64', 'mips64le': 'mips64el', 'riscv64': 'riscv64', 'ppc64le': 'ppc64le'}
+    requested = []
+    if info['proxy'] == 'openclash':
+        requested.append((Path('work/files/etc/openclash/core/clash_meta'), '-v'))
+    elif info['proxy'] == 'nikki':
+        paths = [p for name in ('mihomo', 'mihomo-meta')
+                 for p in Path('work/extracted').glob('*/build_dir/target-*/root-*/usr/bin/' + name)
+                 if p.is_file() and not p.is_symlink()]
+        if not paths:
+            raise ValueError('没有找到可供目标架构执行检查的 Nikki 核心')
+        requested.append((paths[0], '-v'))
+    if info['docker']:
+        paths = list(Path('work/extracted').glob('*/build_dir/target-*/root-*/usr/bin/dockerd'))
+        if not paths:
+            raise ValueError('没有找到 Docker daemon')
+        requested.append((paths[0], '--version'))
+    output = ['Validation scope: device image checks and cross-architecture userspace only; no board boot/DHCP/traffic test.']
+    for binary, argument in requested:
+        emulator = which('qemu-' + emulators.get(cpu, 'unsupported'))
+        if not emulator:
+            raise ValueError('目标架构缺少执行检查器，停止发布所选代理/容器组合')
+        output.append(subprocess.check_output([emulator, str(binary.resolve()), argument],
+                                             text=True, stderr=subprocess.STDOUT, timeout=90))
+    Path('smoke.log').write_text('\n'.join(output))
+    print('\n'.join(output))
+
+
 def inflate_image(image, raw):
     decoder = zlib.decompressobj(16 + zlib.MAX_WBITS)
     with image.open('rb') as source, raw.open('wb') as dest:
@@ -29,6 +63,15 @@ def guest_checks(info):
         if not re.fullmatch(r'[0-9.]+', ip):
             raise ValueError('Invalid test IP')
         checks.append(f'test "$(uci -q get network.lan.ipaddr)" = "{ip}"')
+    policy = info.get('network_policy')
+    if policy:
+        checks.append('test "$(uci -q get dhcp.lan.ignore)" = ' + ('0' if policy['mode'] == 'main' else '1'))
+        if policy['mode'] == 'bypass':
+            checks += [f'test "$(uci -q get dhcp.lan.{s})" = disabled' for s in ('ra', 'dhcpv6', 'ndp')]
+            checks.append(f'test "$(uci -q get network.lan.gateway)" = "{policy["gateway"]}"')
+    if info.get('istore'):
+        checks += ['test -x /bin/is-opkg', 'test -s /etc/apk/keys/istore.pem',
+                   'test -s /etc/apk/repositories.d/istore.list']
     if info['docker']:
         checks += ['docker --version', 'test -x /etc/init.d/dockerd',
                    '/etc/init.d/dockerd start',
@@ -60,13 +103,26 @@ def guest_checks(info):
 
 def smoke(directory):
     info = json.loads((directory / 'build-info.json').read_text())
+    target = info.get('target', 'x86-64')
+    if target not in ('x86-64', 'x86/64', 'armsr/armv8') or info.get('profile', 'generic') != 'generic':
+        cross_check(info)
+        return
     image = directory / f"openwrt-{info['version']}-x86-64-generic-ext4-combined.img.gz"
+    if target == 'armsr/armv8':
+        image = directory / f"openwrt-{info['version']}-armsr-armv8-generic-ext4-combined-efi.img.gz"
     raw = Path('work/smoke.img')
     inflate_image(image, raw)
     command = ['qemu-system-x86_64', '-m', '768', '-smp', '2', '-nographic', '-no-reboot',
                '-drive', f'file={raw.resolve()},format=raw,if=virtio', '-snapshot',
                '-nic', 'user,model=virtio-net-pci,restrict=on',
                '-nic', 'user,model=virtio-net-pci,restrict=on']
+    if target == 'armsr/armv8':
+        command = ['qemu-system-aarch64', '-M', 'virt', '-cpu', 'cortex-a57', '-m', '1024', '-smp', '2',
+                   '-bios', '/usr/share/qemu-efi-aarch64/QEMU_EFI.fd', '-nographic', '-no-reboot',
+                   '-drive', f'file={raw.resolve()},format=raw,if=none,id=disk0',
+                   '-device', 'virtio-blk-pci,drive=disk0', '-snapshot',
+                   '-nic', 'user,model=virtio-net-pci,restrict=on',
+                   '-nic', 'user,model=virtio-net-pci,restrict=on']
     process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                stderr=subprocess.STDOUT, bufsize=0)
     selector = selectors.DefaultSelector()

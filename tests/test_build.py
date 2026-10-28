@@ -14,7 +14,7 @@ SPEC.loader.exec_module(b)
 
 class BuilderTests(unittest.TestCase):
     def test_inputs(self):
-        for version in ('23.05.6', '24.10.6', '25.12.6', '最新大版本', 'previous', 'third'):
+        for version in ('23.05.6', '24.10.6', '25.12.6', '最新大版本', 'previous'):
             for preset in b.PRESETS:
                 b.validate(version, 'x86-64', 1024, preset)
         for version in ('25.12', 'SNAPSHOT', '25.12.0-rc1', '../25.12.6', '25.12.6;id'):

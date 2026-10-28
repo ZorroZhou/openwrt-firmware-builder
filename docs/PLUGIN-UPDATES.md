@@ -4,9 +4,9 @@
 
 本项目 V2.2 起按照 [Nikki 上游推荐的软件源方式](https://github.com/nikkinikki-org/OpenWrt-nikki/blob/main/README.zh.md) 安装。配置逻辑参考 [上游 feed.sh](https://github.com/nikkinikki-org/OpenWrt-nikki/blob/main/feed.sh)，不直接执行网络下载的 shell 脚本。
 
-- 24.10：opkg 源为 `https://nikkinikki.pages.dev/openwrt-24.10/x86_64/nikki`。
-- 25.12：apk 源为 `https://nikkinikki.pages.dev/openwrt-25.12/x86_64/nikki/packages.adb`。
-- 上游未提供本项目支持的 23.05 源，此组合会在构建前拒绝。
+- 24.10：opkg 源模板为 `https://nikkinikki.pages.dev/openwrt-24.10/{arch_packages}/nikki`。
+- 25.12：apk 源模板为 `https://nikkinikki.pages.dev/openwrt-25.12/{arch_packages}/nikki/packages.adb`。
+- V3.0 中 arch_packages 取所选设备的官方元数据，并与 ImageBuilder 核对；源缺少对应分支/架构时明确失败，不混装。仅接受最新两代正式版本。
 
 构建时将源加入 ImageBuilder，使用上游公钥检查软件源签名，再安装 Nikki、Mihomo 与中文管理界面。此路径不对 Nikki 包重签名，也不关闭签名检查。上游公钥下载哈希被锁定；公钥轮换时需审查后更新锁文件。
 
@@ -37,7 +37,7 @@ apk upgrade mihomo-meta nikki luci-app-nikki luci-i18n-nikki-zh-cn
 
 ## OpenClash
 
-OpenClash 每次构建查询 [作者最新正式发布](https://github.com/vernesong/OpenClash/releases/latest)，按当前包管理器选择 IPK/APK。Mihomo 同样取最新正式发布中的通用 amd64-v1 核心。解析后的固定 URL、标签及上游资产 SHA256 记录在 build-info.json；缺少匹配资产或校验值时失败，不降级到旧版。Nikki 仍使用对应分支源的最新可用组件，不强行替换核心。
+OpenClash 每次构建查询 [作者最新正式发布](https://github.com/vernesong/OpenClash/releases/latest)，按当前包管理器选择 IPK/APK。Mihomo 选择与实际 CPU 匹配的保守 ISA 核心，并核对 ELF 类别、字节序和机器类型。未知架构不回退 amd64。解析后的固定 URL、标签及上游资产 SHA256 记录在 build-info.json；缺少匹配资产或校验值时失败，不降级到旧版。Nikki 仍使用对应分支源的最新可用组件，不强行替换核心。
 
 运行后可使用 OpenClash 自带的插件/核心更新机制，按作者说明操作。本项目不为它添加未经上游确认的软件源，也不把它描述为已从 OpenWrt 官方源安装。更新软件、核心或规则数据前，先备份配置，并遵守这些组件各自的许可证。
 
