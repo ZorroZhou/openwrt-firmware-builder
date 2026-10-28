@@ -1,0 +1,57 @@
+name: Verify firmware builds
+
+on:
+  push:
+    branches: [main]
+    paths: ['scripts/**', 'tests/**', 'configs/**', '.github/workflows/**']
+  pull_request:
+    paths: ['scripts/**', 'tests/**', 'configs/**', '.github/workflows/**']
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        version: ['24.10.6', '25.12.6']
+    env:
+      OPENWRT_VERSION: ${{ matrix.version }}
+      OPENWRT_TARGET: x86-64
+      ROOTFS_MB: '256'
+      PRESET: minimal
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test and validate inputs
+        run: |
+          python3 -m unittest discover -s tests -v
+          python3 scripts/build.py --validate-only
+      - name: Install host dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends build-essential libncurses-dev zlib1g-dev gawk git gettext libssl-dev xsltproc rsync unzip file wget curl python3 zstd xz-utils
+      - name: Build and check images
+        run: python3 -u scripts/build.py 2>&1 | tee build.log
+      - name: Save verified images
+        uses: actions/upload-artifact@v4
+        with:
+          name: verified-${{ matrix.version }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
+      - name: Save build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: log-${{ matrix.version }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: build.log
+          if-no-files-found: ignore
+          retention-days: 7
+
